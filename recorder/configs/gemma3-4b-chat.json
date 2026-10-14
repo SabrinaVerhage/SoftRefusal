@@ -1,0 +1,12 @@
+{
+  "model_id": "google/gemma-3-4b-it",
+  "revision": "093f9f388b31de276ce2de164bdc2081324b9767",
+  "adapter": "gemma3",
+  "device": "cpu",
+  "dtype": "bfloat16",
+  "layers": [9, 17, 22, 29],
+  "token_selection": "last_prompt",
+  "max_input_tokens": 2048,
+  "max_new_tokens": 256,
+  "seed": 42
+}

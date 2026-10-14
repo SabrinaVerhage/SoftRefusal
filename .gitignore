@@ -1,0 +1,12 @@
+# Design explorations live outside this repository.
+_design_thinking/
+
+# Local tool and editor state
+.claude/
+.vscode/
+*.log
+Thumbs.db
+.DS_Store
+
+# Screenshots of the RunPod account (balance, Pod pages); kept locally only.
+gpu-api/evidence/

@@ -1,0 +1,10 @@
+{
+  "source": "C:\\Users\\sabri\\.codex\\.chatgpt-projects\\g-p-6a086ce33f208191a8897c234ef10310\\sexual-avoidance",
+  "destination": "C:\\Users\\sabri\\Documents\\Sabrina\\WORK\\_SXTCH\\SEXUAL_AVOIDANCE_AI\\recording-room",
+  "recording_files_verified": 130,
+  "original_retained_as_backup": true,
+  "models_copied": [
+    "google/gemma-3-4b-it",
+    "google/gemma-scope-2-4b-it"
+  ]
+}
