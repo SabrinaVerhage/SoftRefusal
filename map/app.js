@@ -12,7 +12,8 @@
   const filters = new Set(['answered', 'redirected', 'refused', 'unlabeled']);
   const pointers = new Map();
   let drag = null, pinch = null;
-  const colors = { answered: [234, 110, 165], redirected: [231, 151, 101], refused: [157, 119, 198], unlabeled: [142, 130, 125] };
+  let replay = { path: [], index: 0, playing: false, reveal: false, next: 0 };
+  const colors = { answered: [234, 110, 165], redirected: [231, 151, 101], refused: [157, 119, 198], unclear: [142, 130, 125], unlabeled: [142, 130, 125] };
   const topicColors = { consent: '#f3cfac', intimacy: '#efadbe', desire: '#eeadd1', 'erotic fiction': '#c9a7df', relationships: '#edb5ba', 'sexual health': '#f1c4a6', unclassified: '#d7ccc0' };
   // One brand pigment per recorded conversation (pleasure, curiosity, energy, peach, then extras).
   const conversationColors = [[255, 45, 142], [138, 77, 255], [255, 174, 0], [255, 154, 107], [61, 154, 139], [196, 64, 92], [92, 112, 214], [150, 120, 60]];
@@ -32,7 +33,7 @@
     return a.map((x, i) => Math.round(x + (b[i] - x) * u));
   }
   function pigment(p) {
-    if (recorded() && colorMode === 'topic') return conversationColors[(p.conversation_number - 1) % conversationColors.length];
+    if (recorded() && colorMode === 'topic') return conversationColors[M.conversationColorIndex(p.conversation_id, conversationColors.length)];
     if (colorMode === 'response' || p.outcome === 'unlabeled') return colors[p.outcome];
     return spectrum(p);
   }
@@ -76,7 +77,7 @@
     // Illustrative dust from the reference field: never selectable, never searched.
     for (const p of data.texture) {
       const q = project(p); if (q.x < -20 || q.x > width + 20 || q.y < -20 || q.y > height + 20) continue;
-      circle(q.x, q.y, clamp(p.radius * q.per * Math.pow(camera.zoom, 0.4), 0.4, 3)); ctx.fillStyle = rgba(p.textureColor, clamp(0.55 - q.depth * 0.07, 0.18, 0.7)); ctx.fill();
+      circle(q.x, q.y, clamp(p.radius * q.per * Math.pow(camera.zoom, 0.4), 0.4, 3)); ctx.fillStyle = rgba(p.textureColor, clamp(0.55 - q.depth * 0.07, 0.18, 0.7) * (selected && recorded() ? 0.3 : 1)); ctx.fill();
     }
   }
   function drawCloud() {
@@ -89,7 +90,7 @@
       const q = projected[i], p = q.p;
       if (p.path && $('trails').checked) continue;
       drawnPoints.push(q);
-      const alpha = clamp(0.6 - q.depth * 0.085, 0.2, 0.86), rad = clamp((p.radius || 1) * q.per * Math.pow(camera.zoom, 0.4), 0.4, 5);
+      const alpha = clamp(0.6 - q.depth * 0.085, 0.2, 0.86) * pathOpacity(p), rad = clamp((p.radius || 1) * q.per * Math.pow(camera.zoom, 0.4), 0.4, 5);
       if (p.outcome === 'refused') {
         circle(q.x, q.y, rad * 1.15); ctx.strokeStyle = rgba(colorMode === 'response' ? [35, 23, 38] : p.color, alpha); ctx.lineWidth = 0.7; ctx.stroke();
       } else if (p.outcome === 'redirected') {
@@ -114,7 +115,7 @@
   function drawPathNode(p, endpoint) {
     if (!filters.has(p.outcome)) return;
     const q = project(p), r = Math.min(6, 4.1 * q.per * Math.sqrt(camera.zoom)); drawnPoints.push({ ...q, p });
-    if (data.kind === 'semantic') {
+    if (recorded()) {
       circle(q.x, q.y, r + 2.2); ctx.fillStyle = '#fdfaf5'; ctx.fill(); circle(q.x, q.y, r);
       if (p.outcome === 'refused' || p.outcome === 'redirected') { ctx.strokeStyle = rgba(p.color, 1); ctx.lineWidth = p.outcome === 'refused' ? 2.4 : 1.6; ctx.stroke(); }
       else { ctx.fillStyle = rgba(p.color, 1); ctx.fill(); }
@@ -128,6 +129,7 @@
   }
   function drawTrails() {
     if (!$('trails').checked) return;
+    if (recorded()) { drawRecordedTrails(); return; }
     ctx.save(); ctx.strokeStyle = '#21171e'; ctx.lineWidth = data.kind === 'concept' ? 1.7 : 1.1; ctx.setLineDash([5, 5]);
     if (shaped()) {
       for (const path of data.paths) {
@@ -146,11 +148,42 @@
     }
     ctx.restore();
   }
+  function pathOpacity(p) {
+    if (!recorded() || !selected) return 1;
+    if (p.conversation_id !== selected.conversation_id) return 0.16;
+    return replay.reveal && p.turn_id > selected.turn_id ? 0.18 : 1;
+  }
+  function drawRecordedTrails() {
+    ctx.save();
+    // Straight links pass through every measured checkpoint; no invented curved detours.
+    for (const [a, b] of segments) {
+      if (!filters.has(a.outcome) || !filters.has(b.outcome)) continue;
+      const active = a.conversation_id === selected?.conversation_id;
+      ctx.globalAlpha = Math.min(pathOpacity(a), pathOpacity(b));
+      ctx.strokeStyle = rgba(a.color, 1); ctx.lineWidth = active ? 2.3 : 1;
+      ctx.setLineDash(active ? [] : [3, 5]); curve([a, b]); ctx.stroke();
+      const p = project(a), q = project(b), length = Math.hypot(q.x - p.x, q.y - p.y);
+      if (active && length > 24) {
+        const angle = Math.atan2(q.y - p.y, q.x - p.x), x = p.x + (q.x - p.x) * 0.64, y = p.y + (q.y - p.y) * 0.64;
+        ctx.setLineDash([]); ctx.beginPath(); ctx.moveTo(x - 6 * Math.cos(angle - 0.5), y - 6 * Math.sin(angle - 0.5)); ctx.lineTo(x, y); ctx.lineTo(x - 6 * Math.cos(angle + 0.5), y - 6 * Math.sin(angle + 0.5)); ctx.stroke();
+      }
+    }
+    ctx.setLineDash([]);
+    for (const p of data.points) {
+      ctx.globalAlpha = pathOpacity(p);
+      drawPathNode(p, false);
+    }
+    ctx.restore();
+  }
   function drawCore() {
     const label = $('core-label'); label.hidden = !shaped() || !$('core').checked;
     if (label.hidden) return;
     const q = project({ x: 0, y: 0, z: 0 }), r = viewport.scale * camera.zoom * 0.87 * q.per;
-    ctx.save(); circle(q.x, q.y, r); ctx.fillStyle = '#fcf9f1'; ctx.fill(); ctx.strokeStyle = '#181317'; ctx.lineWidth = 1.65; ctx.setLineDash([4, 5]); ctx.stroke(); ctx.restore();
+    ctx.save(); circle(q.x, q.y, r);
+    const shade = ctx.createRadialGradient(q.x - r * 0.3, q.y - r * 0.35, r * 0.08, q.x, q.y, r);
+    shade.addColorStop(0, '#fffcf7'); shade.addColorStop(0.6, '#eee1f0'); shade.addColorStop(1, '#bfa2ce');
+    ctx.fillStyle = shade; ctx.fill(); ctx.strokeStyle = '#38263e'; ctx.lineWidth = 1.3; ctx.stroke();
+    ctx.beginPath(); ctx.ellipse(q.x, q.y, r * 0.98, r * 0.29, -0.2, 0, TAU); ctx.strokeStyle = '#72527d45'; ctx.lineWidth = 0.7; ctx.setLineDash([3, 5]); ctx.stroke(); ctx.restore();
     label.style.left = `${q.x}px`; label.style.top = `${q.y}px`; label.style.transform = `translate(-50%,-50%) scale(${clamp(r / 92, 0.4, 2.1)})`;
     // On the donut, recorded turns live inside the core: keep its lettering quiet.
     label.style.opacity = data.kind === 'semantic' ? 0.32 : q.x < 230 && width > 760 || q.x > width - 290 && width > 760 ? 0.4 : 1;
@@ -187,12 +220,25 @@
     $('point-number').textContent = recorded() ? `TURN ${p.turn_id + 1} / ${turns}` : `PROMPT / ${p.point_id.replace(/^field-|^sample-/, '').toUpperCase()}`;
     $('point-topic').textContent = p.topic.toUpperCase(); $('point-topic').style.background = recorded() ? rgba(p.color, 0.3) : topicColors[p.topic] || '#dfd1dc';
     $('inspector').classList.toggle('recorded', recorded()); $('response-block').hidden = !recorded();
-    $('point-response').textContent = recorded() ? p.response || '(Gemma replied with no text.)' : ''; $('point-response-note').textContent = recorded() && p.hit_token_limit ? 'REPLY REACHED ITS LENGTH LIMIT' : '';
-    $('point-prompt').textContent = p.prompt; $('point-outcome').textContent = p.outcome[0].toUpperCase() + p.outcome.slice(1); $('status-dot').className = `dot ${p.outcome}`;
-    $('point-demo').textContent = recorded() ? 'RECORDED' : data.kind === 'imported' ? p.synthetic === true || data.synthetic === true ? 'SYNTHETIC' : 'IMPORTED' : 'DEMO';
+    $('point-response').textContent = recorded() ? p.response || '(The model replied with no text.)' : ''; $('point-response-note').textContent = recorded() && p.hit_token_limit ? 'REPLY REACHED ITS LENGTH LIMIT' : '';
+    $('response-heading').textContent = data.synthetic ? 'ILLUSTRATIVE RESPONSE' : 'MODEL REPLIED';
+    $('point-prompt').textContent = p.prompt; $('point-outcome').textContent = p.outcome[0].toUpperCase() + p.outcome.slice(1) + (p.label_source === 'model_judge' ? ' · Auto-tagged' : p.label_source === 'human' ? ' · Human-labelled' : ''); $('status-dot').className = `dot ${p.outcome}`;
+    $('point-outcome').title = p.label_reason || '';
+    $('point-demo').textContent = recorded() ? data.synthetic ? 'ILLUSTRATIVE' : 'RECORDED' : data.kind === 'imported' ? p.synthetic === true || data.synthetic === true ? 'SYNTHETIC' : 'IMPORTED' : 'DEMO';
     const original = p.original_coordinates || [p.x, p.y, p.z];
     $('point-coordinates').textContent = data.kind === 'semantic' ? `CORE ${p.core_score.toFixed(2)} / ${Math.round((p.angle * 180 / Math.PI + 360) % 360)}°` : original.map(x => x.toFixed(2)).join(' / ');
-    $('inspector-note').textContent = data.kind === 'semantic' ? `Core score ${p.core_score.toFixed(2)}: 0 sits with your answered turns, 1 with your ${data.semantic.core_label} turns, along Gemma’s internal refusal axis at layer ${data.layer}. The angle is the rest of its state. Defined by your labels; it sharpens as you label more.` : recorded() ? `Gemma 3 12B’s internal state just before this reply, at layer ${data.layer}, placed by UMAP among your other turns. Nearness is a question, not an explanation.` : data.kind === 'concept' ? 'An illustrative prompt, with an assigned response. Click any point to look closer.' : data.kind === 'umap' ? 'Synthetic data. Responses are assigned demo labels; neighbors use the 3D projection.' : 'Metadata from your file. Neighbors use the displayed 3D coordinates.';
+    $('inspector-note').textContent = data.kind === 'semantic' ? `Reference score ${p.core_score.toFixed(2)} at layer ${data.layer}. 0 = answered reference mean; 1 = refused reference mean. ${data.semantic.frozen ? 'Fixed reference ' + data.semantic.reference_id.slice(0, 8) + '. Labels change markers, not position.' : 'Legacy layout fitted to the displayed labels.'} Radius is an artistic compression, not a probability. Links join pre-reply checkpoints.` : recorded() ? `The model’s internal state just before this reply, at layer ${data.layer}, placed by UMAP among your other turns. UMAP is refitted on export; this view is exploratory.` : data.kind === 'concept' ? 'An illustrative prompt, with an assigned response. Click any point to look closer.' : data.kind === 'umap' ? 'Synthetic data. Responses are assigned demo labels; neighbors use the 3D projection.' : 'Metadata from your file. Neighbors use the displayed 3D coordinates.';
+    if (recorded() && data.synthetic) {
+      $('point-coordinates').textContent = 'ILLUSTRATIVE POSITION';
+      $('inspector-note').textContent = 'Art-directed example of conversation replay. Paths, responses and outcomes are invented to demonstrate the interface. No model was queried; these are not measured trajectories.';
+    }
+    if (recorded() && !data.synthetic && p.label_source === 'model_judge') $('inspector-note').textContent += ` Auto-tagged by Gemma; this judgment may be wrong.${p.label_reason ? ' ' + p.label_reason : ''}`;
+    if (recorded()) {
+      if (replay.path[0]?.conversation_id !== p.conversation_id) {
+        replay = { path: M.conversationPath(data.points, p.conversation_id), index: 0, playing: false, reveal: false, next: 0 };
+      }
+      replay.index = replay.path.indexOf(p); updateReplay();
+    }
     dirty = true;
   }
   function makeLabels() {
@@ -206,7 +252,9 @@
     }
   }
   function stopMotion() {
+    replay.playing = false;
     autoOrbit = false; tour = null; transition = null; $('orbit').setAttribute('aria-pressed', 'false'); $('tour').setAttribute('aria-pressed', 'false'); $('tour').firstChild.textContent = 'Follow a path '; $('orbit-icon').textContent = '↻';
+    updateReplay();
   }
   function moveCamera(to, duration = 800) {
     transition = { from: { yaw: camera.yaw, pitch: camera.pitch, zoom: camera.zoom, target: { ...camera.target }, pan: { ...camera.pan } }, to, start: performance.now(), duration: reducedMotion ? 0 : duration }; dirty = true;
@@ -227,21 +275,26 @@
     for (const p of points) p.positions = Object.fromEntries(source.layers.map(n => [n, positions[n].get(p.point_id)]));
     return { ...source, points, layer: source.default_layer };
   }
-  function semanticDataset() {
-    const source = window.RECORDINGS, known = new Set(['answered', 'redirected', 'refused']);
+  function semanticDataset(source = window.RECORDINGS) {
+    const known = new Set(['answered', 'redirected', 'refused', 'unclear']);
     const points = source.points.map((p, i) => {
       // Radius from the refusal score: answered turns on the outer rim, core turns inside the core.
       const d = clamp(2.55 - p.core_score * 2.0, 0.16, 3.05);
-      return { ...p, x: d * Math.cos(p.angle), y: d * Math.sin(p.angle), z: p.lift * 0.42, outcome: known.has(p.outcome) ? p.outcome : 'unlabeled', path: true, radius: 2, tone: (i * 0.618) % 1 };
+      const position = source.semantic.radial_mapping === 'smooth_v1' ? M.semanticPosition(p) : { x: d * Math.cos(p.angle), y: d * Math.sin(p.angle), z: p.lift * 0.42 };
+      return { ...p, ...position, outcome: known.has(p.outcome) ? p.outcome : 'unlabeled', path: true, radius: 2, tone: (i * 0.618) % 1 };
     });
     const paths = [...new Set(points.map(p => p.conversation_id))].map(id => points.filter(p => p.conversation_id === id).sort((a, b) => a.turn_id - b.turn_id));
     const texture = concept.points.filter(p => !p.path); for (const p of texture) p.textureColor = p.textureColor || spectrum(p);
     return { ...source, kind: 'semantic', points, paths, texture, layer: source.semantic.layer };
   }
   function recordingText() {
+    if (recorded() && data.synthetic) {
+      $('source-summary').textContent = 'Illustrative path study · no model measurements';
+      $('point-count').textContent = '3 CONVERSATIONS / 15 ILLUSTRATIVE TURNS'; return;
+    }
     if (data.kind === 'semantic') {
       const c = data.semantic.labels;
-      $('source-summary').textContent = `Your recordings · semantic donut · layer ${data.layer}`;
+      $('source-summary').textContent = `Your recordings · ${data.semantic.frozen ? 'fixed reference' : 'exploratory'} donut · layer ${data.layer}`;
       $('point-count').textContent = `${data.points.length} TURNS / ${c.refused} REFUSED · ${c.redirected} REDIRECTED · ${c.answered} ANSWERED · ${c.unclear + c.unlabeled} OPEN`;
       return;
     }
@@ -262,10 +315,17 @@
     renderLayerSwitch(); recordingText(); if (selected) selectPoint(selected, !$('inspector').hidden);
   }
   function loadDataset(next) {
-    data = next; morph = null; segments = data.kind === 'concept' ? [] : M.conversationPaths(data.points); filters.clear(); ['answered', 'redirected', 'refused', 'unlabeled'].forEach(x => filters.add(x));
+    replay = { path: [], index: 0, playing: false, reveal: false, next: 0 };
+    data = next; morph = null; segments = data.kind === 'concept' ? [] : M.conversationPaths(data.points); filters.clear(); ['answered', 'redirected', 'refused', 'unclear', 'unlabeled'].forEach(x => filters.add(x));
+    $('replay').hidden = !recorded();
+    $('conversation-select').replaceChildren();
+    if (recorded()) for (const id of new Set(data.points.map(p => p.conversation_id))) {
+      const p = data.points.find(p => p.conversation_id === id), option = document.createElement('option');
+      option.value = id; option.textContent = `${p.conversation_number} · ${p.conversation_title || p.prompt}`; $('conversation-select').append(option);
+    }
     document.querySelectorAll('[data-outcome]').forEach(button => { button.hidden = !data.points.some(p => p.outcome === button.dataset.outcome); button.setAttribute('aria-pressed', 'true'); });
     $('contours').checked = shaped(); $('contours').disabled = !shaped(); $('core').checked = shaped(); $('core').disabled = !shaped(); $('texture-row').hidden = !data.texture;
-    $('core-sub').textContent = data.kind === 'semantic' ? `YOUR ${data.semantic.core_label.toUpperCase()} TURNS` : 'A CONCEPTUAL LANDMARK';
+    $('core-sub').textContent = data.kind === 'semantic' ? 'REFUSAL REFERENCE / VISUAL METAPHOR' : 'A CONCEPTUAL LANDMARK';
     $('trails').disabled = data.kind !== 'concept' && !segments.length; $('trails').checked = data.kind === 'concept' || recorded(); $('tour').disabled = data.kind !== 'concept' && !recorded();
     $('color-topic').textContent = recorded() ? 'Conversation' : 'Spectrum'; renderLayerSwitch();
     $('source-summary').textContent = data.kind === 'concept' ? 'Illustrative field · synthetic points' : data.kind === 'umap' ? 'Actual UMAP · synthetic vectors' : `Imported coordinates · ${data.synthetic === true || data.points.every(p => p.synthetic === true) ? 'synthetic' : 'user-supplied data'}`;
@@ -296,6 +356,37 @@
     for (const p of matches) { const b = document.createElement('button'); b.textContent = p.prompt; b.onclick = () => { selectPoint(p); focusPoint(); root.hidden = true; $('search').blur(); }; root.append(b); }
     if (!matches.length) { const note = document.createElement('p'); note.textContent = 'No visible prompts match that search.'; root.append(note); }
   }
+  function updateReplay() {
+    if (!recorded() || !replay.path.length) return;
+    const p = replay.path[replay.index];
+    $('conversation-select').value = p.conversation_id;
+    $('replay-turn').max = String(replay.path.length - 1); $('replay-turn').value = String(replay.index);
+    $('replay-turn').disabled = replay.path.length < 2;
+    $('replay-turn').setAttribute('aria-valuetext', `Turn ${p.turn_id + 1} of ${replay.path.length}`);
+    $('replay-prev').disabled = replay.index === 0; $('replay-next').disabled = replay.index === replay.path.length - 1;
+    $('replay-play').textContent = replay.playing ? 'Pause' : replay.index === replay.path.length - 1 && replay.reveal ? 'Replay' : 'Play';
+    $('replay-play').setAttribute('aria-pressed', String(replay.playing));
+    $('replay-status').textContent = `Turn ${p.turn_id + 1} / ${replay.path.length} · ${p.outcome}${filters.has(p.outcome) ? '' : ' · hidden by filter'}`;
+    $('tour').setAttribute('aria-pressed', String(replay.playing)); $('tour').firstChild.textContent = replay.playing ? 'Pause path ' : 'Follow a path ';
+  }
+  function seekReplay(index) {
+    if (!replay.path.length) return;
+    replay.reveal = true; selectPoint(replay.path[clamp(index, 0, replay.path.length - 1)]);
+    dirty = true;
+  }
+  function toggleReplay() {
+    if (!replay.path.length) return;
+    if (replay.playing) { stopMotion(); dirty = true; return; }
+    stopMotion(); $('trails').checked = true;
+    if (!replay.reveal || replay.index === replay.path.length - 1) seekReplay(0);
+    replay.reveal = true; replay.playing = true; replay.next = performance.now() + 2400; updateReplay(); dirty = true;
+  }
+  $('conversation-select').onchange = () => { const id = $('conversation-select').value; stopMotion(); selectPoint(M.conversationPath(data.points, id)[0]); };
+  $('replay-play').onclick = toggleReplay;
+  $('replay-prev').onclick = () => { stopMotion(); seekReplay(replay.index - 1); };
+  $('replay-next').onclick = () => { stopMotion(); seekReplay(replay.index + 1); };
+  $('replay-turn').oninput = () => { const index = Number($('replay-turn').value); stopMotion(); seekReplay(index); };
+  $('replay-full').onclick = () => { stopMotion(); replay.reveal = false; updateReplay(); dirty = true; };
   canvas.addEventListener('pointerdown', e => {
     stopMotion(); canvas.focus({ preventScroll: true }); canvas.setPointerCapture(e.pointerId); pointers.set(e.pointerId, { x: e.offsetX, y: e.offsetY });
     drag = { x: e.offsetX, y: e.offsetY, startX: e.offsetX, startY: e.offsetY, moved: false, pan: e.shiftKey || e.button === 2 };
@@ -330,6 +421,7 @@
   $('view-3d').onclick = () => reset();
   $('orbit').onclick = () => { const next = !autoOrbit; stopMotion(); autoOrbit = next; $('orbit').setAttribute('aria-pressed', String(next)); $('orbit-icon').textContent = next ? 'Ⅱ' : '↻'; };
   $('tour').onclick = () => {
+    if (recorded()) { toggleReplay(); return; }
     if (tour) { stopMotion(); dirty = true; return; }
     stopMotion(); $('trails').checked = true;
     const start = selected || data.points[0];
@@ -340,13 +432,14 @@
   $('close-inspector').onclick = () => { $('inspector').hidden = true; $('inspector').classList.remove('mobile-open'); $('inspector-mobile').setAttribute('aria-expanded', 'false'); };
   $('layers-mobile').onclick = () => { const open = $('layers').classList.toggle('mobile-open'); $('layers-mobile').setAttribute('aria-expanded', String(open)); if (open) { $('inspector').classList.remove('mobile-open'); $('inspector-mobile').setAttribute('aria-expanded', 'false'); } };
   $('inspector-mobile').onclick = () => { const open = !$('inspector').classList.contains('mobile-open'); $('inspector').hidden = false; $('inspector').classList.toggle('mobile-open', open); $('inspector-mobile').setAttribute('aria-expanded', String(open)); if (open) { $('layers').classList.remove('mobile-open'); $('layers-mobile').setAttribute('aria-expanded', 'false'); } };
-  ['contours', 'trails', 'core', 'texture'].forEach(id => { $(id).onchange = () => { dirty = true; }; });
+  ['contours', 'trails', 'core', 'texture'].forEach(id => { $(id).onchange = () => { if (id === 'trails' && !$('trails').checked) stopMotion(); dirty = true; }; });
   ['topic', 'response'].forEach(mode => { $(`color-${mode === 'response' ? 'outcome' : mode}`).onclick = () => { colorMode = mode; $('color-topic').classList.toggle('active', mode === 'topic'); $('color-outcome').classList.toggle('active', mode === 'response'); $('color-topic').setAttribute('aria-pressed', String(mode === 'topic')); $('color-outcome').setAttribute('aria-pressed', String(mode === 'response')); recolor(); }; });
-  document.querySelectorAll('[data-outcome]').forEach(b => { b.onclick = () => { const outcome = b.dataset.outcome; if (filters.has(outcome)) filters.delete(outcome); else filters.add(outcome); b.setAttribute('aria-pressed', String(filters.has(outcome))); dirty = true; updateSearch(); }; });
+  document.querySelectorAll('[data-outcome]').forEach(b => { b.onclick = () => { const outcome = b.dataset.outcome; if (filters.has(outcome)) filters.delete(outcome); else filters.add(outcome); b.setAttribute('aria-pressed', String(filters.has(outcome))); dirty = true; updateSearch(); updateReplay(); }; });
   $('search').addEventListener('input', updateSearch);
   document.addEventListener('pointerdown', e => { if (!e.target.closest('.search-wrap')) $('search-results').hidden = true; });
   $('dataset').onchange = () => {
-    if ($('dataset').value === 'semantic') loadDataset(semanticDataset());
+    if ($('dataset').value === 'study') loadDataset(semanticDataset(window.PATH_STUDY));
+    else if ($('dataset').value === 'semantic') loadDataset(semanticDataset());
     else if ($('dataset').value === 'recordings') loadDataset(recordingsDataset());
     else if ($('dataset').value === 'concept') loadDataset(concept);
     else if ($('dataset').value === 'umap') {
@@ -378,6 +471,10 @@
   function frame(time) {
     const dt = Math.min((time - lastTime) / 1000, 0.05); lastTime = time;
     if (autoOrbit && !document.hidden && !$('about').open) { camera.yaw += dt * 0.13; dirty = true; }
+    if (replay.playing && !document.hidden && !$('about').open && time >= replay.next) {
+      if (replay.index >= replay.path.length - 1) { replay.playing = false; updateReplay(); }
+      else { seekReplay(replay.index + 1); replay.next = time + 2400; }
+    }
     if (tour && time >= tour.next && !$('about').open && !document.hidden) {
       tour.index++; if (tour.index >= tour.path.length) { stopMotion(); message(recorded() ? 'End of this conversation. Select a turn in another conversation to follow its path.' : 'The path ends at the conceptual boundary. Drag to keep exploring.'); }
       else { const p = tour.path[tour.index], k = data.kind === 'recordings' ? 0.8 : 0.4; selectPoint(p); moveCamera({ target: { x: p.x * k, y: p.y * k, z: p.z * k }, zoom: data.kind === 'recordings' ? 1.6 : 1.4, pan: { x: 0, y: 0 } }); tour.next = time + (reducedMotion ? 2600 : 2200); $('tour').firstChild.textContent = `Path ${tour.index + 1} / ${tour.path.length} `; }
@@ -397,9 +494,12 @@
     if (dirty && !document.hidden) render(); requestAnimationFrame(frame);
   }
   new ResizeObserver(resize).observe(canvas); resize();
+  if (window.PATH_STUDY) { const option = document.createElement('option'); option.value = 'study'; option.textContent = 'Path study · illustrative'; $('dataset').append(option); }
   const donut = window.RECORDINGS?.semantic && !window.RECORDINGS.semantic.unavailable;
   if (window.RECORDINGS) $('dataset').querySelector('[value=recordings]').hidden = false;
-  if (donut) { $('dataset').querySelector('[value=semantic]').hidden = false; $('dataset').value = 'semantic'; loadDataset(semanticDataset()); }
+  if (donut) $('dataset').querySelector('[value=semantic]').hidden = false;
+  if (window.PATH_STUDY && new URLSearchParams(location.search).has('study')) { $('dataset').value = 'study'; loadDataset(semanticDataset(window.PATH_STUDY)); }
+  else if (donut) { $('dataset').value = 'semantic'; loadDataset(semanticDataset()); }
   else if (window.RECORDINGS) { $('dataset').value = 'recordings'; loadDataset(recordingsDataset()); message(`No donut yet: ${window.RECORDINGS.semantic?.unavailable || 'rebuild the map with Update Map from Recordings.'}`, 12000); }
   else loadDataset(concept);
   requestAnimationFrame(frame);

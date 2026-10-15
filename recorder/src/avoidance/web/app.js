@@ -2,6 +2,7 @@ const $ = id => document.getElementById(id);
 let sessionListKey = '', instructionSession = null, instructionDirty = false;
 let session = localStorage.getItem('gemma-session'), state, rendering = '', currentJob = null, sending = false, appClosed = false, downloading = false;
 const stages = ['prepared','capturing','generating','saved'];
+const autoTagStage = 'Reply saved · Gemma is tagging its behaviour';
 const stageNames = {starting:'Preparing your conversation',loading:'Loading Gemma on your laptop',queued:'Waiting for the cloud GPU',prepared:'Conversation prepared',capturing:'Capturing internal snapshots',generating:'Gemma is writing',saving:'Saving the recording',saved:'Recording saved',stopped:'Reply stopped',error:'Recording needs attention'};
 async function api(path, data) {
   const response = await fetch(path, data === undefined ? {} : {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
@@ -12,7 +13,15 @@ function node(tag, className, text){const el=document.createElement(tag);if(clas
 async function newChat(){try{const r=await api('/api/new',{});session=r.session;localStorage.setItem('gemma-session',session);rendering='';alertMessage('');await refresh();$('prompt').focus();}catch(e){alertMessage(e.message);}}
 function message(role,text,meta,warning=false){const box=node('article','message '+role);box.append(node('div','message-label',role==='user'?'YOU':'GEMMA'));box.append(node('div','message-body',text));if(meta)box.append(node('div','message-meta'+(warning?' warning':''),meta));return box;}
 const outcomes=[['answered','Answered'],['redirected','Redirected'],['refused','Refused'],['unclear','Unclear']];
-function labelBar(r){const bar=node('div','label-bar');bar.append(node('span','label-title','How did Gemma respond?'));outcomes.forEach(([value,text])=>{const on=r.label===value,b=node('button','label-option'+(on?' active':''),text);b.type='button';b.setAttribute('aria-pressed',String(on));b.onclick=async()=>{try{await api('/api/label',{session,point_id:r.point_id,outcome:on?'unlabeled':value});rendering='';await refresh();}catch(e){alertMessage(e.message);}};bar.append(b);});return bar;}
+function labelBar(r){
+  const bar=node('div','label-bar');
+  const source=r.label_source==='human'?'Your label':r.label_source==='model_judge'?(r.label_status==='error'?'Auto-tag unavailable':'Auto-tagged by Gemma'):'Not tagged yet';
+  const title=node('span','label-title',source+' · correct if needed');title.title=r.label_reason||'';bar.append(title);
+  outcomes.forEach(([value,text])=>{const on=r.label===value,b=node('button','label-option'+(on?' active':''),text);b.type='button';b.setAttribute('aria-pressed',String(on));b.onclick=async()=>{try{await api('/api/label',{session,point_id:r.point_id,outcome:value});rendering='';await refresh();}catch(e){alertMessage(e.message);}};bar.append(b);});
+  if(r.label_source==='human'&&state?.auto_label_enabled){const reset=node('button','label-option','Use auto tag');reset.type='button';reset.onclick=async()=>{try{await api('/api/label',{session,point_id:r.point_id,outcome:'auto'});rendering='';await refresh();}catch(e){alertMessage(e.message);}};bar.append(reset);}
+  if(r.label_reason)bar.append(node('span','label-reason',r.label_reason));
+  return bar;
+}
 function renderMessages(s){
   const job=s.job;const key=JSON.stringify([s.rows,job?.id,job?.status,job?.response]);if(key===rendering)return;rendering=key;
   const list=$('messages'),nearBottom=list.scrollHeight-list.scrollTop-list.clientHeight<100;
@@ -39,12 +48,15 @@ function render(s){state=s;applyMode(s);const job=s.job,busy=s.busy,ownBusy=job?
   $('send').disabled=busy||sending;$('new-chat').disabled=busy;$('stop').hidden=!ownBusy;$('prompt').disabled=busy;
   $('model-status').textContent=s.mode==='remote'?(s.model_ready?'Gemma 3 12B · cloud GPU connected':'Gemma 3 12B · connects on first message'):(s.model_ready?'Gemma 3 · ready':'Gemma 3 · loads on first message');
   $('saved-count').textContent=`${s.rows.length} ${s.rows.length===1?'turn':'turns'} recorded · ${s.rows.length*4} snapshots`;
+  $('auto-tag').hidden=!s.auto_label_enabled;$('auto-tag').disabled=busy||!s.rows.some(r=>!r.label_source||r.label_status==='error');
   $('export').disabled=!s.rows.length||downloading;$('reply-limit').disabled=busy;$('shutdown').disabled=s.closing;$('shutdown-compact').disabled=s.closing;$('recording-path').textContent=s.recording_path;
   $('settings').textContent=`${s.mode==='remote'?'Gemma 3 12B IT on the cloud GPU':'Gemma 3 4B IT'} · layers ${s.config.layers.join(', ')} (counting from zero). Choose a reply cap below the composer; the exact cap is recorded per turn; conversation input at ${s.config.max_input_tokens}. Full numbers are saved, not just these previews.`;
   $('sessions').replaceChildren(...s.sessions.map(item=>{const b=node('button','session'+(item.id===session?' active':''),item.title);b.title=item.title;b.disabled=busy;b.onclick=()=>{session=item.id;localStorage.setItem('gemma-session',session);rendering='';$('messages').querySelectorAll('article').forEach(x=>x.remove());$('welcome').hidden=false;alertMessage('');refresh();};return b;}));
   renderMessages(s);
-  const stage=job?.stage; $('activity').textContent=stageNames[stage]||(s.rows.length?'Saved conversation':'Ready for your first message');
+  const stage=job?.stage; $('activity').textContent=stage==='labelling'?autoTagStage:stageNames[stage]||(s.rows.length?'Saved conversation':'Ready for your first message');
   if(busy&&!ownBusy)$('activity').textContent='Gemma is replying in another conversation';
+  if(s.label_task?.status==='running'){$('activity').textContent=`Auto-tagging saved replies · ${s.label_task.done}/${s.label_task.total}`;$('stop').hidden=false;}
+  if(s.label_task?.error)alertMessage(s.label_task.error);
   $('activity-dot').className='dot'+(ownBusy?' working':job?.status==='error'?' error':'');
   $('elapsed').textContent=ownBusy?`${Math.max(0,Math.floor(Date.now()/1000-job.started_seconds))}s`:'';
   let phaseIndex=stages.indexOf(stage);if(stage==='saving')phaseIndex=2;
@@ -65,6 +77,7 @@ $('new-chat').onclick=newChat;$('new-compact').onclick=newChat;
 $('session-compact').onchange=()=>{session=$('session-compact').value;localStorage.setItem('gemma-session',session);rendering='';alertMessage('');refresh();};
 $('guide-compact').onclick=()=>$('guide').showModal();
 $('stop').onclick=async()=>{try{await api('/api/stop',{});alertMessage('Stopping at the next safe point. Earlier completed turns remain saved.');}catch(e){alertMessage(e.message);}};
+$('auto-tag').onclick=async()=>{try{await api('/api/auto-label',{session});alertMessage('Gemma is tagging saved replies. Your corrections will be kept.');await refresh();}catch(e){alertMessage(e.message);}};
 $('export').onclick=async()=>{if(downloading)return;downloading=true;$('export').disabled=true;try{const r=await fetch('/api/export?session='+encodeURIComponent(session));if(!r.ok)throw new Error('The export could not be created.');const blob=await r.blob(),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=`gemma-conversation-${session.slice(0,8)}.zip`;a.click();setTimeout(()=>URL.revokeObjectURL(url),10000);alertMessage('Recording exported once. Your conversation is also already saved in the project folder.');}catch(e){alertMessage(e.message);}finally{downloading=false;$('export').disabled=false;}};
 $('explain-open').onclick=()=>$('guide').showModal();$('explain-close').onclick=()=>$('guide').close();
 document.querySelectorAll('[data-prompt]').forEach(b=>b.onclick=()=>{$('prompt').value=b.dataset.prompt;$('prompt').focus();});

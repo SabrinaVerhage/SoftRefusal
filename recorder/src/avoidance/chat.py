@@ -19,10 +19,9 @@ from urllib.parse import parse_qs, urlsplit
 import numpy as np
 
 from .io import digest, environment, load_dataset, read_json, read_jsonl, write_json, write_jsonl
+from .labels import OUTCOMES, label_records
 
 DEFAULT_INSTRUCTION = "Keep your reply under 50 words, in two or three sentences."
-# Human judgements of each reply; recorded separately from the model data.
-OUTCOMES = ("answered", "redirected", "refused", "unclear", "unlabeled")
 
 
 def now():
@@ -37,7 +36,7 @@ def atomic_json(path, value):
 
 
 class ChatService:
-    def __init__(self, config, root, adapter_factory=None):
+    def __init__(self, config, root, adapter_factory=None, auto_label=True):
         self.config = dict(config)
         if self.config["token_selection"] != "last_prompt":
             raise ValueError("Live chat currently requires last_prompt snapshots")
@@ -51,6 +50,8 @@ class ChatService:
         self.closing = False
         self.sessions = {}
         self.remote = self.config.get("adapter") == "remote"
+        self.auto_label_enabled = auto_label and self.remote
+        self.label_task = None
         for path in self.root.glob("*/session.json"):
             meta = read_json(path)
             self.sessions[meta["id"]] = meta
@@ -95,12 +96,10 @@ class ChatService:
         return rows, arrays
 
     def labels(self, sid):
-        """Latest human label per turn. labels.jsonl is append-only, so every change stays on record."""
-        path = self.root / sid / "labels.jsonl"
-        return {row["point_id"]: row["outcome"] for row in read_jsonl(path)} if path.exists() else {}
+        return {pid: row["outcome"] for pid, row in label_records(self.root / sid).items()}
 
     def label(self, sid, point_id, outcome):
-        if outcome not in OUTCOMES:
+        if outcome not in (*OUTCOMES, "auto"):
             raise ValueError("Choose answered, redirected, refused, unclear or unlabeled")
         with self.lock:
             if point_id not in {row["point_id"] for row in self._rows(sid)[0]}:
@@ -112,11 +111,14 @@ class ChatService:
     def state(self, sid=None):
         with self.lock:
             rows = self._rows(sid)[0] if sid else []
-            labels = self.labels(sid) if sid else {}
+            labels = label_records(self.root / sid) if sid else {}
             job = self.job if self.job and self.job["session_id"] == sid else None
             summaries = [{**{k: row.get(k) for k in ["point_id", "turn_id", "prompt", "response", "hit_token_limit",
                                                      "input_token_count", "generated_token_count", "snapshot_preview", "education_trace", "generation_settings"]},
-                          "label": labels.get(row["point_id"], "unlabeled")} for row in rows]
+                          "label": labels.get(row["point_id"], {}).get("outcome", "unlabeled"),
+                          "label_source": labels.get(row["point_id"], {}).get("label_source"),
+                          "label_reason": labels.get(row["point_id"], {}).get("reason", ""),
+                          "label_status": labels.get(row["point_id"], {}).get("status", "complete")} for row in rows]
             if job:
                 job = dict(job, events=[e for e in job["events"] if e.get("message")][-80:])
             return json.loads(json.dumps({
@@ -124,7 +126,8 @@ class ChatService:
                 "project_root": str(Path(__file__).resolve().parents[2]),
                 "model_ready": self.adapter is not None, "config": self.config, "closing": self.closing,
                 "sessions": sorted(self.sessions.values(), key=lambda s: s["created_utc"], reverse=True),
-                "rows": summaries, "job": job, "busy": bool(self.job and self.job["status"] == "running"),
+                "rows": summaries, "job": job, "busy": self.busy(),
+                "auto_label_enabled": self.auto_label_enabled, "label_task": self.label_task,
                 "instruction": self._meta(sid).get("instruction", "") if sid else "",
                 "recording_path": str(self.root / sid) if sid else str(self.root),
             }))
@@ -142,7 +145,7 @@ class ChatService:
             meta = self._meta(sid)
             if meta["config"] != self.config:
                 raise ValueError("This conversation uses different recording settings. Start a new conversation.")
-            if self.job and self.job["status"] == "running":
+            if self.busy():
                 raise ValueError("Gemma is already working. Wait for it to finish or press Stop.")
             rows, _ = self._rows(sid)
             messages = []
@@ -194,8 +197,52 @@ class ChatService:
 
     def stop(self):
         with self.lock:
-            if self.job and self.job["status"] == "running":
+            if self.busy():
                 self.cancel.set()
+
+    def busy(self):
+        return bool((self.job and self.job["status"] == "running") or
+                    (self.label_task and self.label_task["status"] == "running"))
+
+    def _label_saved(self, sid, row):
+        from .judging import judge_reply
+        verdict = judge_reply(self.adapter, row, self.cancel)
+        with self.lock:
+            with (self.root / sid / "auto_labels.jsonl").open("a", encoding="utf-8") as stream:
+                stream.write(json.dumps({**verdict, "point_id": row["point_id"],
+                                        "label_source": "model_judge", "time": now()}) + "\n")
+        return verdict
+
+    def auto_label_saved(self, sid):
+        """Tag missing/failed labels in an existing conversation, preserving corrections."""
+        with self.lock:
+            if not self.auto_label_enabled or self.closing or self.busy():
+                raise ValueError("Automatic tagging needs an idle cloud Recording Room.")
+            labels = label_records(self.root / sid)
+            rows = [r for r in self._rows(sid)[0]
+                    if r["point_id"] not in labels or labels[r["point_id"]].get("status") == "error"]
+            self.cancel.clear()
+            self.label_task = {"session_id": sid, "status": "running", "total": len(rows), "done": 0}
+            def run():
+                try:
+                    if self.adapter is None:
+                        from .remote import RemoteAdapter
+                        self.adapter = (self.adapter_factory or RemoteAdapter)(self.config)
+                    for row in rows:
+                        if self.cancel.is_set():
+                            break
+                        verdict = self._label_saved(sid, row)
+                        with self.lock:
+                            self.label_task["done"] += 1
+                        if verdict["status"] == "error":
+                            raise ValueError(verdict["reason"])
+                except Exception as exc:
+                    with self.lock:
+                        self.label_task["error"] = str(exc)
+                finally:
+                    with self.lock:
+                        self.label_task["status"] = "complete"
+            threading.Thread(target=run, daemon=True).start()
 
     def _run(self, sid, messages, attempt):
         from .model import HFAdapter, GenerationCancelled
@@ -220,6 +267,15 @@ class ChatService:
                 self.job["response"] = result["response"]
                 self._emit("saved", message="Recording saved. This turn is ready for later analysis.")
                 outcome = "complete"
+            if self.auto_label_enabled:
+                self._emit("labelling", message="Reply saved. Gemma is separately tagging its response behaviour.")
+                try:
+                    row = self._rows(sid)[0][-1]
+                    verdict = self._label_saved(sid, row)
+                    self._emit("saved", message="Automatic tag saved; you can correct it below." if verdict["status"] == "complete"
+                               else "Reply saved; automatic tagging needs attention. You can retry or tag manually.")
+                except Exception:
+                    self._emit("saved", message="Reply saved; automatic tag could not be saved. Retry or tag manually.")
         except Exception as exc:
             with self.lock:
                 cancelled = isinstance(exc, GenerationCancelled)
@@ -307,6 +363,10 @@ class ChatService:
                 for p in directory.iterdir():
                     if p.is_file():
                         archive.write(p, p.name)
+                for name in ("labels.jsonl", "auto_labels.jsonl"):
+                    path = self.root / sid / name
+                    if path.exists():
+                        archive.write(path, name)
                 for row in read_jsonl(directory / "steps.jsonl"):
                     attempt = self.root / sid / "attempts" / row["recording_attempt_id"]
                     for p in attempt.glob("*.json*"):
@@ -374,6 +434,9 @@ def make_handler(service):
                 if self.path == "/api/label":
                     service.label(data["session"], data["point_id"], data["outcome"])
                     return self.respond({"ok": True})
+                if self.path == "/api/auto-label":
+                    service.auto_label_saved(data["session"])
+                    return self.respond({"ok": True})
                 if self.path == "/api/stop":
                     service.stop()
                     return self.respond({"ok": True})
@@ -385,7 +448,7 @@ def make_handler(service):
                     def finish_shutdown():
                         while True:
                             with service.lock:
-                                busy = service.job and service.job["status"] == "running"
+                                busy = service.busy()
                             if not busy:
                                 break
                             time.sleep(.1)

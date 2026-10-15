@@ -26,6 +26,7 @@ def main():
     p.add_argument("--seed", type=int, default=42)
     p.add_argument("--neighbors", type=int, default=10)
     p.add_argument("--min-dist", type=float, default=.1)
+    p.add_argument("--rebuild-reference", action="store_true", help="Explicitly replace the fixed donut reference; archives the previous reference and repositions paths")
     for name in ["reduce", "features", "probe", "score"]:
         p = commands.add_parser(name)
         p.add_argument("--run", required=True)
@@ -65,7 +66,7 @@ def main():
             print(collect(args.config, args.input, args.out, args.synthetic))
         elif args.command == "map":
             from .mapping import export_map
-            print(export_map(args.runs, args.out, args.layer, args.seed, args.neighbors, args.min_dist))
+            print(export_map(args.runs, args.out, args.layer, args.seed, args.neighbors, args.min_dist, args.rebuild_reference))
         elif args.command == "reduce":
             from .reduce import reduce
             print(reduce(args.run, args.out, args.layer, args.seed, args.neighbors, args.min_dist))

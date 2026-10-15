@@ -1,0 +1,12 @@
+softrefusal.sabrinaverhage.com {
+	encode zstd gzip
+	header {
+		X-Content-Type-Options nosniff
+		Referrer-Policy no-referrer
+		X-Robots-Tag "noindex, nofollow"
+		-Server
+	}
+	respond /healthz "ok" 200
+	root * /srv/softrefusal/public
+	file_server
+}

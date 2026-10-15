@@ -5,28 +5,30 @@ fits a separate 3D UMAP per recorded layer (cosine on raw residual vectors, the
 same settings as `reduce`). Exploratory and in-sample: axes, distances and paths
 are not refusal measurements.
 
-With human labels it also places every turn on the "semantic donut": distance from
+With automatic labels or human corrections it places every turn on the "semantic donut": distance from
 the centre follows a refusal axis (mean refused minus mean answered direction, as in
 difference-of-means refusal-direction work), the angle follows what remains of the
-state once that axis is removed. The axis is defined by the same labelled turns it
-displays, so labelled turns land where their label says by construction."""
+state once that axis is removed. The first labelled export freezes a reference;
+later exports reuse it. Reference-group mean scores are fixed by construction,
+not validated predictions. The separate UMAP views remain exploratory refits."""
 from __future__ import annotations
 
+import hashlib
 import json
 from datetime import datetime, timezone
 from pathlib import Path
 
 import numpy as np
 
-from .io import load_dataset, read_json, read_jsonl
+from .io import load_dataset, measurement_signature, read_json, read_jsonl
+from .labels import label_records
 
 OUTCOMES = ("answered", "redirected", "refused", "unclear", "unlabeled")
 
 
 def read_labels(directory):
-    """Latest human label per turn, from the recording room's append-only labels.jsonl."""
-    path = Path(directory) / "labels.jsonl"
-    return {row["point_id"]: row["outcome"] for row in read_jsonl(path)} if path.exists() else {}
+    """Effective automatic labels, with human corrections taking precedence."""
+    return {pid: row["outcome"] for pid, row in label_records(directory).items()}
 
 
 def collect_recordings(runs):
@@ -42,16 +44,20 @@ def collect_recordings(runs):
     for number, (_, directory, meta) in enumerate(sorted(sessions, key=lambda s: s[0]), start=1):
         manifest, session_rows, arrays = load_dataset(directory / meta["latest"])
         config = manifest["config"]
-        current = (config["model_id"], config["revision"], tuple(config["layers"]), config["token_selection"])
+        current = {"layers": config["layers"], "measurement": measurement_signature(manifest, config["layers"][0]),
+                   "module_path": manifest["module_path"], "site": manifest["site"]}
         if signature is None:
             signature = current
         elif current != signature:
             # 4B and 12B snapshots (or different layers) cannot share one map.
             raise ValueError(f"{directory.name} was recorded with different settings; map one model and layer set at a time")
-        labels = read_labels(directory)
+        labels = label_records(directory)
         for row in session_rows:
+            label = labels.get(row["point_id"], {})
             rows.append({**row, "conversation_number": number, "conversation_title": meta.get("title", ""),
-                         "outcome": labels.get(row["point_id"], "unlabeled")})
+                         "outcome": label.get("outcome", "unlabeled"), "label_source": label.get("label_source"),
+                         "label_reason": label.get("reason", ""), "label_judge_version": label.get("judge_version"),
+                         "label_model_id": label.get("model_id"), "label_revision": label.get("revision")})
         for key, matrix in arrays.items():
             matrices.setdefault(key, []).append(matrix)
     return rows, {key: np.vstack(parts) for key, parts in matrices.items()}, signature
@@ -71,40 +77,98 @@ def fit_layer(x, seed, neighbors, min_dist):
     return coords, settings
 
 
-def semantic_layout(x, outcomes):
-    """Donut coordinates for each turn: refusal score (radius), angle and lift. None + reason without labels."""
+def unit_vectors(x):
+    x = np.asarray(x, dtype=np.float64)
+    if x.ndim != 2 or not len(x) or not np.isfinite(x).all():
+        raise ValueError("Donut requires a finite matrix of recorded vectors")
+    norms = np.linalg.norm(x, axis=1, keepdims=True)
+    if (norms <= 1e-12).any():
+        raise ValueError("Donut direction is undefined for zero vectors")
+    return x / norms
+
+
+def fit_semantic_reference(x, outcomes):
+    """Fit once; the axis, PCA centre/basis and lift scale are reused unchanged."""
     outcomes = np.asarray(outcomes)
-    core_label = "refused" if (outcomes == "refused").any() else "redirected"
-    core, outer = outcomes == core_label, outcomes == "answered"
+    core, outer = outcomes == "refused", outcomes == "answered"
     if not core.any() or not outer.any():
-        return None, "Label at least one reply as refused (or redirected) and one as answered in the recording room."
-    # Directions only: residual norms vary with token position and conversation length.
-    u = x / np.linalg.norm(x, axis=1, keepdims=True)
+        return None, "Label at least one reply as refused and one as answered. Redirection alone does not define a refusal reference."
+    u = unit_vectors(x)
     axis = u[core].mean(0) - u[outer].mean(0)
-    axis /= np.linalg.norm(axis)
+    length = np.linalg.norm(axis)
+    if length <= 1e-10:
+        return None, "The answered and refused reference states have no distinct direction. Add varied labelled recordings."
+    axis /= length
     raw = u @ axis
     low, high = raw[outer].mean(), raw[core].mean()
-    score = (raw - low) / (high - low)  # 0 = like the answered turns, 1 = like the core turns.
     rest = u - np.outer(raw, axis)
-    rest -= rest.mean(0)
-    _, _, vt = np.linalg.svd(rest, full_matrices=False)
-    pcs = np.zeros((len(x), 3))
-    pcs[:, :min(3, len(vt))] = rest @ vt[:3].T
-    lift = pcs[:, 2] / (np.abs(pcs[:, 2]).max() or 1)
-    return {"score": score, "angle": np.arctan2(pcs[:, 1], pcs[:, 0]), "lift": lift, "core_label": core_label,
+    center = rest.mean(0)
+    _, singular, vt = np.linalg.svd(rest - center, full_matrices=False)
+    basis = np.zeros((3, x.shape[1]))
+    for i in range(min(3, len(vt))):
+        if singular[i] > 1e-10:
+            basis[i] = vt[i]
+            # Resolve the arbitrary PCA sign when creating a new reference.
+            if basis[i, np.argmax(np.abs(basis[i]))] < 0:
+                basis[i] *= -1
+    pcs = (rest - center) @ basis.T
+    return {"axis": axis.tolist(), "low": float(low), "high": float(high),
+            "center": center.tolist(), "basis": basis.tolist(),
+            "lift_scale": float(np.abs(pcs[:, 2]).max() or 1), "dimensions": x.shape[1],
             "counts": {k: int((outcomes == k).sum()) for k in OUTCOMES}}, None
 
 
-def export_map(runs, out, layer=None, seed=42, neighbors=10, min_dist=0.1):
-    rows, matrices, (model_id, revision, layers, _) = collect_recordings(runs)
-    layers = list(layers)
+def semantic_layout(x, outcomes, reference=None):
+    if reference is None:
+        reference, reason = fit_semantic_reference(x, outcomes)
+        if reference is None:
+            return None, reason
+    u = unit_vectors(x)
+    axis, basis, center = (np.asarray(reference[k]) for k in ("axis", "basis", "center"))
+    if (axis.shape != (u.shape[1],) or center.shape != axis.shape or basis.shape != (3, u.shape[1])
+            or not all(np.isfinite(a).all() for a in (axis, basis, center))
+            or not np.isfinite([reference["low"], reference["high"], reference["lift_scale"]]).all()
+            or reference["high"] - reference["low"] <= 1e-10 or reference["lift_scale"] <= 0):
+        raise ValueError("Invalid donut reference; restore its saved copy or explicitly rebuild it")
+    raw = u @ axis
+    pcs = (u - np.outer(raw, axis) - center) @ basis.T
+    outcomes = np.asarray(outcomes)
+    return {"score": (raw - reference["low"]) / (reference["high"] - reference["low"]),
+            "angle": np.arctan2(pcs[:, 1], pcs[:, 0]),
+            "lift": np.clip(pcs[:, 2] / reference["lift_scale"], -1, 1), "core_label": "refused",
+            "counts": {k: int((outcomes == k).sum()) for k in OUTCOMES}}, None
+
+
+def export_map(runs, out, layer=None, seed=42, neighbors=10, min_dist=0.1, rebuild_reference=False):
+    rows, matrices, signature = collect_recordings(runs)
+    layers = list(signature["layers"])
+    model_id, revision = (signature["measurement"][k] for k in ("model_id", "revision"))
     default = layer if layer is not None else layers[len(layers) // 2 - 1 if len(layers) > 1 else 0]
     if default not in layers:
         raise ValueError(f"Layer {default} was not recorded; choose one of {layers}")
+    out = Path(out)
+    reference_path = out.with_suffix(".reference.json")
+    reference = read_json(reference_path) if reference_path.exists() and not rebuild_reference else None
+    expected = {**signature, "donut_layer": default, "dimensions": matrices[f"layer_{default}"].shape[1]}
+    if reference is not None and (reference.get("version") != 1 or reference.get("signature") != expected):
+        raise ValueError("Saved donut reference has different measurement settings. Use another output path or --rebuild-reference.")
+    outcomes = [r["outcome"] for r in rows]
+    new_reference = reference is None
+    reason = None
+    if new_reference:
+        geometry, reason = fit_semantic_reference(matrices[f"layer_{default}"], outcomes)
+        if geometry:
+            reference = {"version": 1, "signature": expected, "geometry": geometry,
+                         "created_utc": datetime.now(timezone.utc).isoformat(),
+                         "anchors": [{k: r.get(k) for k in ("point_id", "outcome", "label_source", "label_judge_version", "label_model_id", "label_revision")} for r in rows],
+                         "activation_sha256": hashlib.sha256(matrices[f"layer_{default}"].tobytes()).hexdigest()}
+            reference["id"] = hashlib.sha256(json.dumps(reference, sort_keys=True).encode()).hexdigest()[:16]
+        elif rebuild_reference:
+            raise ValueError(f"Cannot rebuild reference: {reason} Previous files were kept.")
+    semantic = semantic_layout(matrices[f"layer_{default}"], outcomes, reference["geometry"])[0] if reference else None
     coordinates, settings = {}, None
     for n in layers:
         coordinates[n], settings = fit_layer(matrices[f"layer_{n}"], seed, neighbors, min_dist)
-    semantic, reason = semantic_layout(matrices[f"layer_{default}"], [r["outcome"] for r in rows])
     previous, points = {}, []
     for i, row in enumerate(rows):
         cid = row["conversation_id"]
@@ -113,6 +177,8 @@ def export_map(runs, out, layer=None, seed=42, neighbors=10, min_dist=0.1):
             "previous_point_id": previous.get(cid),
             "conversation_number": row["conversation_number"], "conversation_title": row["conversation_title"],
             "prompt": row["prompt"], "response": row["response"], "outcome": row.get("outcome", "unlabeled"),
+            "label_source": row.get("label_source"), "label_reason": row.get("label_reason", ""),
+            "label_judge_version": row.get("label_judge_version"),
             "hit_token_limit": row.get("hit_token_limit", False),
             "topic": f"conversation {row['conversation_number']}",
             "layers": {str(n): [round(float(v), 6) for v in coordinates[n][i]] for n in layers},
@@ -130,15 +196,26 @@ def export_map(runs, out, layer=None, seed=42, neighbors=10, min_dist=0.1):
         "settings": settings, "site": "resid_post at the final formatted-prompt token, before each reply",
         "warning": "Exploratory in-sample UMAP per layer. Axes, distances and paths are not refusal measurements.",
         "semantic": {"layer": default, "core_label": semantic["core_label"], "labels": semantic["counts"],
+                     "radial_mapping": "smooth_v1",
+                     "reference_id": reference["id"], "reference_created_utc": reference["created_utc"],
+                     "reference_labels": reference["geometry"]["counts"], "frozen": True,
+                     "reference_label_sources": {source: sum(a.get("label_source") == source and a["outcome"] in ("answered", "refused") for a in reference["anchors"])
+                                                 for source in ("human", "model_judge")},
                      "radius": "refusal score: projection on mean(core) - mean(answered) of unit vectors; 0 = answered mean, 1 = core mean",
                      "angle": "atan2 of the first two principal components after removing the refusal axis",
-                     "warning": "Axis defined in-sample by the displayed labels; a sketch until many turns are labelled."}
+                     "warning": "Fixed exploratory reference, not a calibrated probability or causal boundary. Anchors may use fallible automatic judgments and were fitted in-sample. UMAP views still refit."}
                     if semantic else {"unavailable": reason},
         "points": points,
     }
-    out = Path(out)
     out.parent.mkdir(parents=True, exist_ok=True)
     text = json.dumps(payload, ensure_ascii=False, allow_nan=False)
+    if reference and new_reference:
+        if reference_path.exists():
+            old = read_json(reference_path)
+            reference_path.with_name(f"{out.stem}.reference-{old['id']}.json").write_bytes(reference_path.read_bytes())
+        temporary = reference_path.with_suffix(".json.tmp")
+        temporary.write_text(json.dumps(reference, ensure_ascii=False, allow_nan=False), encoding="utf-8")
+        temporary.replace(reference_path)
     out.with_suffix(".json").write_text(text, encoding="utf-8")
     # A script file also opens straight from the filesystem, without a local server.
     out.with_suffix(".js").write_text(f"window.RECORDINGS={text};\n", encoding="utf-8")

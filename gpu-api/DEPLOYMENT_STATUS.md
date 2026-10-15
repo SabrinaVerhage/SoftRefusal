@@ -1,5 +1,15 @@
 # Current RunPod deployment status
 
+## Active session — 15 October 2026
+
+**RUNNING: soft-refusal-h100-session, Pod `00yqqxrkv65o6w`, H100 SXM 80 GB, $3.99/hour compute plus container storage.** User approved one hour, approximately $4 compute. Started around 13:00 UTC; stop by **14:00 UTC / 16:00 Europe/Berlin**. A one-shot Codex thread shutdown follow-up is active; it is not a provider-enforced timer. Verify actual shutdown and update this section.
+
+Existing `soft-refusal-models` 150 GB volume is mounted at `/workspace`; the three older A40 Pods remain stopped at $0.00/hour. No old Pod or volume was deleted. The preserved backend was started using `scripts/start.sh`, admission enabled, bind `0.0.0.0`, Hermes not enabled, with log `runtime/api-h100-20261015.log`. API URL: https://00yqqxrkv65o6w-8000.proxy.runpod.net/ . Local Recording Room is on port 8766; viewer is on port 8777.
+
+Local private connection settings use this new API URL and the existing non-admin `rehearsal-2` application credential recovered from the Pod. No credentials were changed or printed. Authenticated Gemma health and one live neutral end-to-end recording passed: conversation `f0585c1a7ec34d39b26dab2f25b9fe01`, four finite float32 snapshots of 3,840 values, six file hashes verified, pinned Gemma 12B BF16 on H100. API PID 1747 is current for this session only. The `recording-room` token itself was absent from this checkout and the Pod's token files. New recordings use the existing rehearsal-2 owner. Earlier status sections below are historical and do not describe the active H100 session.
+
+## Historical handoff
+
 Updated 2026-10-13 evening: Pod STOPPED by the user and verified at $0.00/hr. Current Pod: mxntb0l9fom8sw (page/API https://mxntb0l9fom8sw-8000.proxy.runpod.net/). The Pod's auth.json differs from the local secrets copy; local rehearsal codes are not the Pod's. Earlier text below describes the 08:26 UTC state. Read AGENTS.md, DEPLOYMENT_LOG.md and README.md before continuing.
 
 **STOPPED AT THE USER'S REQUEST.** Version 0.2 fixes were deployed and tested. Stop Pod was confirmed for soft-refusal-poc-migration, ID 2qla3db8of4pgs. RunPod now shows Start for $0.59/hr and both Pod rows at $0.00/hr. The persistent network volume remains provisioned. Evidence: evidence/runpod-v02-stopped.png. Do not restart paid compute without an agreed new session budget.

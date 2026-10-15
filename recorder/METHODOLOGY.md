@@ -1,5 +1,13 @@
 # Methodology — initial protocol, 3 October 2026
 
+## Fixed donut reference — 15 October 2026
+
+The interactive map export now fits its donut geometry once and persists a versioned JSON reference beside the exported map. The reference retains the mean-difference axis of unit-normalized states, answered/refused projection means, residual PCA centre and three-component basis, vertical scale, measurement signature, anchor point IDs and their labels, and the source activation-matrix hash. Subsequent exports transform against these fixed values. New or edited labels affect markers, not existing coordinates. Only an explicit `--rebuild-reference` replaces the geometry, archiving the previous reference first. At least one answered and one refused observation is an execution guard, not a sufficient research sample. Redirected observations no longer stand in for refused anchors. Coincident group means make the donut unavailable rather than causing a numerical failure.
+
+Reference score 0 is the answered anchor-group mean and 1 is the refused anchor-group mean, by construction. This is an uncalibrated descriptive projection, not a validated probability or causal measurement. The viewer uses radius `0.16 + 2.89 / (1 + exp(3.8 * (score - 0.5)))` and vertical coordinate `0.42 * clip(PC3 / reference_scale, -1, 1)`. These are artistic display choices. Angle comes from the first two residual principal components, without a semantic topic claim. The central sphere's world-space radius remains 0.87. Separate per-layer UMAP views still refit; frozen-reference guarantees apply to the donut only.
+
+Replay joins pre-response checkpoints directly, preserves measured markers, and distinguishes labels from position. It records no additional generation states. The included path-study preview is explicitly authored synthetic content, not model output or internal measurements.
+
 ## Persistent conversation instructions update
 
 New interactive UI/API chats have an explicit short-answer instruction, editable between turns. Legacy sessions remain unchanged. Session metadata stores the current instruction; every row and attempt stores the instruction used. The pinned Gemma native template folds the logical system entry into the initial user turn. Changes replace that prefix for future inference requests while preserving earlier rows, user texts and rendered prompts. Treat instruction changes as an experimental intervention and match or stratify them in comparisons. See [instructions](docs/conversation-instructions.md).

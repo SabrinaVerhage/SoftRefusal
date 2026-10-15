@@ -51,7 +51,7 @@
       if (seen.has(id)) throw new Error(`Duplicate point ID: ${id}.`);
       seen.add(id);
       let outcome = String(row.outcome ?? 'unlabeled').toLowerCase();
-      outcome = ({ engaged: 'answered', refused: 'refused', refusal: 'refused', redirected: 'redirected', answered: 'answered' })[outcome] || 'unlabeled';
+      outcome = ({ engaged: 'answered', allow: 'answered', refused: 'refused', refusal: 'refused', redirected: 'redirected', answered: 'answered', unclear: 'unclear' })[outcome] || 'unlabeled';
       return { ...row, point_id: id, prompt: String(row.prompt ?? row.text ?? row.label ?? 'Prompt text not supplied'), topic: String(row.topic ?? 'unclassified'), outcome, original_coordinates: Array.isArray(row.original_coordinates) && row.original_coordinates.length === 3 && row.original_coordinates.every(Number.isFinite) ? row.original_coordinates.slice() : [row.x, row.y, row.z], x: row.x, y: row.y, z: row.z, tone: (i * 0.61803398875) % 1, radius: rows.length < 100 ? 2.5 : 1.3 };
     });
     const mins = [Infinity, Infinity, Infinity], maxs = [-Infinity, -Infinity, -Infinity];
@@ -90,6 +90,19 @@
     return segments;
   }
   function nearest(points, point, count = 8) { return points.filter(p => p !== point).map(p => ({ point: p, distance: Math.hypot(p.x - point.x, p.y - point.y, p.z - point.z) })).sort((a, b) => a.distance - b.distance).slice(0, count).map(x => x.point); }
+  function conversationPath(points, id) {
+    return points.filter(p => p.conversation_id === id).sort((a, b) => a.turn_id - b.turn_id);
+  }
+  function conversationColorIndex(id, count) {
+    let hash = 2166136261;
+    for (const c of String(id)) hash = Math.imul(hash ^ c.charCodeAt(0), 16777619);
+    return (hash >>> 0) % count;
+  }
+  function semanticPosition(p) {
+    // Fixed artistic radial compression. Preserve the unbounded score for inspection.
+    const radius = 0.16 + 2.89 / (1 + Math.exp(clamp(3.8 * (p.core_score - 0.5), -700, 700)));
+    return { x: radius * Math.cos(p.angle), y: radius * Math.sin(p.angle), z: p.lift * 0.42 };
+  }
   function project(p, camera, viewport) {
     const x = p.x - camera.target.x, y = p.y - camera.target.y, z = p.z - camera.target.z;
     const cy = Math.cos(camera.yaw), sy = Math.sin(camera.yaw), cp = Math.cos(camera.pitch), sp = Math.sin(camera.pitch);
@@ -97,5 +110,5 @@
     const per = 8 / Math.max(0.4, 8 + depth), scale = viewport.scale * camera.zoom;
     return { x: viewport.cx + xx * per * scale + camera.pan.x, y: viewport.cy - yy * per * scale + camera.pan.y, depth, per };
   }
-  root.CloudMath = { TAU, clamp, rng, surface, makeConcept, normalizePoints, recordingPositions, parseFile, conversationPaths, nearest, project, topics };
+  root.CloudMath = { TAU, clamp, rng, surface, makeConcept, normalizePoints, recordingPositions, parseFile, conversationPaths, conversationPath, conversationColorIndex, semanticPosition, nearest, project, topics };
 })(typeof window !== 'undefined' ? window : globalThis);

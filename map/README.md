@@ -29,13 +29,19 @@ Double-click **Update Map from Recordings.cmd**. It collects every completed con
 
 ### Your recordings · donut (needs labels)
 
-Label replies in the recording room with the buttons under each Gemma reply (answered / redirected / refused / unclear), then update the map. You need at least one *refused* (or *redirected*) and one *answered* reply.
+Label replies in the recording room with the buttons under each Gemma reply (answered / redirected / refused / unclear), then update the map. You need at least one *refused* and one *answered* reply, plus six distinct recorded turns for the accompanying UMAP export. These are execution minima, not evidence of a reliable refusal direction.
 
-- **Distance from the centre = refusal score.** From Gemma's internal state at layer 24 before each reply: the direction from your *answered* turns' average state to your *refused* turns' average state is the refusal axis. Each turn's position along it is its score: 0 sits on the outer rim with the answered turns, 1 inside the core with the refused turns.
-- **Angle = semantic approach.** What remains of the state once the refusal axis is removed (its first two principal components).
-- **Lines** follow each conversation in order: diving inward means pressing towards the core, circling the rim means being deflected. Filled dots are answered, rings redirected, thick rings refused; colours mark conversations.
-- The axis is defined by the labelled turns it shows, so they land where their labels say by construction. Unlabelled and *redirected* turns are not used to build it, so where they land is the interesting part. It sharpens as you label more.
+- **A fixed landscape.** The first eligible export saves `data/recordings.reference.json`. Later exports reuse its axis, PCA centre/basis and vertical scale. Adding turns or changing labels does not reposition unchanged internal states. Keep this file with your recordings; losing it causes a new reference to be fitted. The first export after upgrading establishes a new layout; old exports keep their previous radial mapping until rebuilt.
+- **Distance from the centre follows a reference score.** The direction is the mean unit-normalized refused state minus the mean unit-normalized answered state, at layer 24 by default. Score 0 is the reference answered mean; 1 is the reference refused mean. A fixed smooth radial compression places these toward the rim and inside the central sphere. The score is not a probability. The sphere is a visual metaphor, not a discovered physical boundary.
+- **Angle** comes from the first two principal components after removing the reference direction. It describes remaining state variation, not a validated topic or intent. Vertical position uses the third component and a fixed reference scale, clipped to keep the field compact.
+- **Lines and markers.** Straight links connect actual checkpoints; arrowheads show order. No intermediate states are inferred. Filled dots are answered, rings redirected, thick rings refused; unclear remains a separate filter. Colours are stable for each conversation ID. Selecting a conversation fades the surrounding paths and illustrative texture.
+- **Replay.** Choose a conversation above the point card, then play/pause, step backward/forward or scrub the turn slider. Future turns stay faint until reached. **Full path** restores full visibility of the selected path. The camera remains under your control. Hidden outcome categories remain hidden during replay, with a status note when the selected turn is filtered out.
+- The reference groups' mean scores are fixed by construction. Label edits update markers immediately on export but do not retrain the geometry. Redirected turns never substitute for refused anchors. If the two group means coincide, the exporter reports that no distinct direction exists and still exports UMAP.
 - The faint dot texture is the illustrative reference field (toggle **Field texture**); only the larger dots on the paths are your data.
+
+To deliberately fit a new reference, run the map command with `--rebuild-reference`. It archives the old reference as `recordings.reference-<id>.json` before replacing it. Use a different output path to preserve a complete alternate map. Measurement changes (model/revision, precision, template, implementation version, layer or token site) require a different output path or an explicit rebuild. The separate UMAP views still refit on each export.
+
+**Path study · illustrative** in the dataset menu demonstrates returning to a topic, moving toward an alternative, and staying near a boundary. All its positions, responses and outcomes are authored examples; no model was queried. Open `http://127.0.0.1:8777/?study` to go directly to it.
 
 ### Your recordings · UMAP
 
@@ -86,3 +92,5 @@ The viewer accepts up to 100,000 points and files up to 60 MB. For large clouds 
 ## Files
 
 `index.html`, `style.css`, `app.js`, and `cloud.js` form the viewer. `generate_sample.py` rebuilds the genuine UMAP sample. `launch.py` starts/reuses or stops the local server; `serve.py` serves the viewer. `verify.cjs` checks data parsing, coordinate preservation, neighbor calculations, and compatibility with Recording Room exports.
+
+`node verify.cjs` is self-contained and does not require private recordings. `check-replay.cjs` exercises replay in a local browser (Node 20+, Playwright and installed Edge required); it opens the local HTML directly, or uses `MAP_TEST_URL` when supplied. Screenshots go to ignored `runtime/`. The recorder's `tests/test_reference.py` uses only NumPy and unittest to check reference persistence, relabelling, append stability, incompatible measurements and degenerate directions. Its export tests stub UMAP and make no claim about live-model behaviour.

@@ -8,6 +8,7 @@
 .instruction-box{font-size:11px;margin:6px 0;color:var(--muted)}.instruction-box summary{cursor:pointer;color:var(--green)}.instruction-box p{margin:7px 0}.instruction-box textarea{width:100%;box-sizing:border-box;background:var(--white);border:1px solid var(--line);border-radius:5px;padding:8px;color:var(--ink);font:inherit}.instruction-box button{margin:5px 8px 0 0;border:1px solid var(--line);background:var(--pale);color:var(--ink);border-radius:4px;padding:5px 8px;font-size:11px}
 .label-bar{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-top:9px}
 .label-title{font-size:10px;color:#829075;margin-right:4px}
+.label-reason{flex-basis:100%;font-size:11px;color:#66735f;line-height:1.5}
 .label-option{font:inherit;font-size:10px;padding:4px 10px;border:1px solid #c9d0c1;border-radius:20px;background:transparent;color:#4b5a4c;cursor:pointer}
 .label-option:hover{border-color:#2e574c}
 .label-option.active{background:#2e574c;border-color:#2e574c;color:#faf8f2}

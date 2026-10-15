@@ -82,6 +82,11 @@ class FakeAPI:
 
     def advance(self, job):
         job["polls"] += 1
+        if "record_layers" not in job["body"]:
+            job.update(status="succeeded", result={"model": CONFIG["model_id"], "revision": CONFIG["revision"],
+                       "text": getattr(self, "judge_output", '{"outcome":"answered","reason":"The requested greeting was provided."}'),
+                       "hit_token_limit": False})
+            return self.view(job)
         layers = job["body"]["record_layers"]
         previews = [{"layer": n, "dimensions": DIMS, "preview": [float(n)] * 8} for n in layers]
         candidates = [{"step": i, "top": [{"id": 4 + i, "piece": f"t{i}", "probability": .9}],
@@ -132,7 +137,7 @@ def api():
 
 
 def service_for(tmp_path, url, code=CODE):
-    return ChatService(CONFIG, tmp_path, lambda c: RemoteAdapter(c, {"api_url": url, "access_code": code}))
+    return ChatService(CONFIG, tmp_path, lambda c: RemoteAdapter(c, {"api_url": url, "access_code": code}), auto_label=False)
 
 
 def finish(service):

@@ -31,11 +31,23 @@ assert.equal(M.normalizePoints([{ x: 0, y: 0, z: 0 }, { x: 1e-15, y: 0, z: 0 }])
 const sample = JSON.parse(fs.readFileSync(path.join(__dirname, 'data/sample-umap.json'), 'utf8'));
 assert.equal(sample.kind, 'umap'); assert.equal(sample.synthetic, true); assert.equal(sample.points.length, 3900);
 assert.equal(M.normalizePoints(sample.points).length, 3900);
-const recording = fs.readFileSync(path.join(__dirname, '../recorder/runs/synthetic-smoke-3d/points.jsonl'), 'utf8');
+// Self-contained export-shaped fixture; fresh checkouts have no private runs/ directory.
+const recording = Array.from({ length: 12 }, (_, i) => JSON.stringify({
+  point_id: `fixture-${i}`, conversation_id: `fixture-${Math.floor(i / 2)}`, turn_id: i % 2,
+  x: i * 0.2, y: i % 3, z: i % 2, synthetic: true, outcome: 'unlabeled'
+})).join('\n');
 const recorded = M.parseFile(recording).points;
 assert.equal(recorded.length, 12); assert(recorded.every(p => p.synthetic === true && p.outcome === 'unlabeled')); assert.equal(M.conversationPaths(recorded).length, 6);
 const layered = { layers: [12, 24], points: source.map((p, i) => ({ point_id: p.point_id, layers: { 12: [p.x, p.y, p.z], 24: [p.x * 100 + i, -p.y, p.z * 3] } })) };
 const byLayer = M.recordingPositions(layered);
+const chronological = M.conversationPath([{ conversation_id: 'b', turn_id: 0 }, { conversation_id: 'a', turn_id: 2 }, { conversation_id: 'a', turn_id: 0 }], 'a');
+assert.deepEqual(chronological.map(p => p.turn_id), [0, 2]);
+assert.equal(M.conversationColorIndex('stable-id', 8), M.conversationColorIndex('stable-id', 8));
+const scorePoints = [-2, 0, 0.5, 1, 3].map(core_score => M.semanticPosition({ core_score, angle: 0.3, lift: 0.2 }));
+assert(scorePoints.every(p => Object.values(p).every(Number.isFinite)));
+assert(scorePoints.slice(1).every((p, i) => Math.hypot(p.x, p.y) < Math.hypot(scorePoints[i].x, scorePoints[i].y)));
+assert.deepEqual(M.semanticPosition({ core_score: 0.7, angle: 0.3, lift: 0.2 }), M.semanticPosition({ core_score: 0.7, angle: 0.3, lift: 0.2, outcome: 'refused' }));
+assert.equal(M.normalizePoints([{ x: 0, y: 0, z: 0, outcome: 'unclear' }])[0].outcome, 'unclear');
 assert.deepEqual(byLayer[12].get('a').original, [5, 10, -3]);
 assert(Math.abs(distance(byLayer[12].get('a'), byLayer[12].get('b')) / distance(byLayer[12].get('a'), byLayer[12].get('c')) - distance(source[0], source[1]) / distance(source[0], source[2])) < 1e-12);
 assert(Math.max(...[...byLayer[24].values()].map(p => Math.abs(p.x))) <= 2.7 + 1e-12); // Each layer scaled on its own.
