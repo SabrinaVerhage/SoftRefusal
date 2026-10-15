@@ -38,8 +38,13 @@ def write_jsonl(path, rows):
 def environment():
     names = ["torch", "transformers", "numpy", "scipy", "scikit-learn", "umap-learn",
              "huggingface-hub", "safetensors", "accelerate", "numba", "pynndescent", "joblib"]
-    return {"python": platform.python_version(), "platform": platform.platform(),
-            "packages": {n: importlib.metadata.version(n) for n in names}}
+    packages = {}
+    for name in names:
+        try:
+            packages[name] = importlib.metadata.version(name)
+        except importlib.metadata.PackageNotFoundError:
+            packages[name] = None  # Remote-only hosts do not install model runtimes.
+    return {"python": platform.python_version(), "platform": platform.platform(), "packages": packages}
 
 
 def new_directory(path):

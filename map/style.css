@@ -34,3 +34,4 @@
 .replay-status{font-family:var(--mono);font-size:8px;color:#746374;line-height:1.5}
 .dot.unclear{background:transparent;border:1px dashed #8a8078}
 @media(max-width:760px){.inspector.recorded{max-height:min(390px,calc(100% - 340px));padding-right:3px}.replay{padding:10px}.replay-buttons button{min-width:32px;min-height:34px}.replay input[type=range]{min-height:24px}}
+.live-status{position:fixed;left:50%;bottom:10px;transform:translateX(-50%);max-width:95vw;z-index:40;background:#fffdf5;border:1px solid #241c2633;border-radius:20px;padding:9px 16px;color:#4d3158;font:11px/1.4 Arial,sans-serif;text-decoration:none;box-shadow:0 3px 15px #241c2610;text-align:center}

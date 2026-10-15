@@ -18,7 +18,7 @@ from urllib.parse import urlsplit
 import numpy as np
 
 from .io import read_json
-from .model import GenerationCancelled
+from .exceptions import GenerationCancelled
 
 ROOT = Path(__file__).resolve().parents[2]
 CONNECTION_FILE = ROOT / "secrets" / "gpu-connection.json"

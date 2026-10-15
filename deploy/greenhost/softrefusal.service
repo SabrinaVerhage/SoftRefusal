@@ -1,0 +1,35 @@
+[Unit]
+Description=Soft Refusal visitor chat and shared map
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=softrefusal
+Group=softrefusal
+WorkingDirectory=/opt/softrefusal/current
+Environment=PYTHONPATH=/opt/softrefusal/current/recorder/src:/opt/softrefusal/current
+Environment=SOFT_REFUSAL_DATA=/var/lib/softrefusal
+Environment=SOFT_REFUSAL_CONNECTION=/etc/softrefusal/gpu-connection.json
+Environment=SOFT_REFUSAL_ORIGIN=https://softrefusal.sabrinaverhage.com
+Environment=NUMBA_NUM_THREADS=1
+Environment=OPENBLAS_NUM_THREADS=1
+Environment=OMP_NUM_THREADS=1
+Environment=PYTHONDONTWRITEBYTECODE=1
+Environment=NUMBA_CACHE_DIR=/var/lib/softrefusal/numba-cache
+ExecStart=/opt/softrefusal/current/.venv/bin/python -m uvicorn hosted.app:app --host 127.0.0.1 --port 8780 --workers 1 --proxy-headers --forwarded-allow-ips 127.0.0.1 --no-access-log --limit-concurrency 50 --timeout-graceful-shutdown 120
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=150
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/softrefusal
+MemoryMax=800M
+MemorySwapMax=800M
+TasksMax=64
+
+[Install]
+WantedBy=multi-user.target

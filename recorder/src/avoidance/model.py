@@ -5,6 +5,7 @@ from contextlib import contextmanager
 
 import numpy as np
 import torch
+from .exceptions import GenerationCancelled
 
 
 def seed_everything(seed):
@@ -41,10 +42,6 @@ def residual_hooks(blocks, layers, token_index, on_capture=None, once=False):
     finally:
         for handle in handles:
             handle.remove()
-
-
-class GenerationCancelled(Exception):
-    pass
 
 
 class HFAdapter:

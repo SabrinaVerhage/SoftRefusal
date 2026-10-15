@@ -245,7 +245,7 @@ class ChatService:
             threading.Thread(target=run, daemon=True).start()
 
     def _run(self, sid, messages, attempt):
-        from .model import HFAdapter, GenerationCancelled
+        from .exceptions import GenerationCancelled
         outcome = "error"
         try:
             if self.adapter is None:
@@ -253,6 +253,7 @@ class ChatService:
                     from .remote import RemoteAdapter
                     self._emit("loading", message="Connecting to the cloud GPU.")
                 else:
+                    from .model import HFAdapter
                     self._emit("loading", message="Loading Gemma from this computer. This happens once when the app starts.")
                 self.adapter = (self.adapter_factory or (RemoteAdapter if self.remote else HFAdapter))(self.config)
             if self.cancel.is_set():
@@ -329,7 +330,10 @@ class ChatService:
             writer = csv.DictWriter(f, fieldnames=["point_id", "outcome", "annotator", "split", "notes"])
             writer.writeheader()
             writer.writerows({"point_id": r["point_id"], "outcome": "unlabeled"} for r in rows)
-        import torch
+        cuda_version = None
+        if not self.remote:
+            import torch
+            cuda_version = torch.version.cuda
         files = ["steps.jsonl", "activations.npz", "input.jsonl", "chat_template.txt", "model_config.json", "generation_config.json"]
         manifest = {"schema_version": 1, "status": "complete", "synthetic": False, "created_utc": now(),
                     "config": self.config, "environment": environment(), "site": "resid_post",
@@ -339,7 +343,7 @@ class ChatService:
                     "hashes": {name: digest(destination / name) for name in files},
                     "source_sha256": {p.name: digest(p) for p in sorted(Path(__file__).parent.glob("*.py"))},
                     "generation_overrides": {"do_sample": False, "num_beams": 1, "max_new_tokens": "per_turn: see generation_settings in steps.jsonl", "use_cache": True},
-                    "hardware": {"device": self.config["device"], "cuda": torch.version.cuda},
+                    "hardware": {"device": self.config["device"], "cuda": cuda_version},
                     "collection_mode": "interactive_exploration", "capture_execution": "per_turn: see steps.jsonl; legacy rows use dedicated pre-response pass"}
         if hasattr(self.adapter, "manifest_extra"):
             manifest.update(self.adapter.manifest_extra())

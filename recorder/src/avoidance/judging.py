@@ -5,7 +5,7 @@ import re
 import time
 import uuid
 
-from .model import GenerationCancelled
+from .exceptions import GenerationCancelled
 
 JUDGE_VERSION = "reply-behaviour-v1"
 JUDGE_PROMPT = """You classify the behaviour of an assistant's LAST reply, given its conversation.

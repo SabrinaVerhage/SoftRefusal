@@ -139,7 +139,7 @@ def semantic_layout(x, outcomes, reference=None):
             "counts": {k: int((outcomes == k).sum()) for k in OUTCOMES}}, None
 
 
-def export_map(runs, out, layer=None, seed=42, neighbors=10, min_dist=0.1, rebuild_reference=False):
+def export_map(runs, out, layer=None, seed=42, neighbors=10, min_dist=0.1, rebuild_reference=False, allow_small=False):
     rows, matrices, signature = collect_recordings(runs)
     layers = list(signature["layers"])
     model_id, revision = (signature["measurement"][k] for k in ("model_id", "revision"))
@@ -168,7 +168,18 @@ def export_map(runs, out, layer=None, seed=42, neighbors=10, min_dist=0.1, rebui
     semantic = semantic_layout(matrices[f"layer_{default}"], outcomes, reference["geometry"])[0] if reference else None
     coordinates, settings = {}, None
     for n in layers:
-        coordinates[n], settings = fit_layer(matrices[f"layer_{n}"], seed, neighbors, min_dist)
+        matrix = matrices[f"layer_{n}"]
+        if allow_small and (len(matrix) < 6 or len(np.unique(matrix, axis=0)) < 6):
+            centered = matrix.astype(np.float64) - matrix.mean(axis=0)
+            u, singular, _ = np.linalg.svd(centered, full_matrices=False)
+            coords = np.zeros((len(matrix), 3))
+            count = min(3, len(singular))
+            coords[:, :count] = u[:, :count] * singular[:count]
+            coordinates[n] = coords
+            settings = {"method": "pca_preview", "n_components": 3}
+        else:
+            coordinates[n], settings = fit_layer(matrix, seed, neighbors, min_dist)
+            settings["method"] = "umap"
     previous, points = {}, []
     for i, row in enumerate(rows):
         cid = row["conversation_id"]
@@ -179,6 +190,7 @@ def export_map(runs, out, layer=None, seed=42, neighbors=10, min_dist=0.1, rebui
             "prompt": row["prompt"], "response": row["response"], "outcome": row.get("outcome", "unlabeled"),
             "label_source": row.get("label_source"), "label_reason": row.get("label_reason", ""),
             "label_judge_version": row.get("label_judge_version"),
+            "label_model_id": row.get("label_model_id"), "label_revision": row.get("label_revision"),
             "hit_token_limit": row.get("hit_token_limit", False),
             "topic": f"conversation {row['conversation_number']}",
             "layers": {str(n): [round(float(v), 6) for v in coordinates[n][i]] for n in layers},
@@ -194,7 +206,9 @@ def export_map(runs, out, layer=None, seed=42, neighbors=10, min_dist=0.1, rebui
         "model_id": model_id, "revision": revision, "layers": layers, "default_layer": default,
         "conversations": len({r["conversation_id"] for r in rows}), "created_utc": datetime.now(timezone.utc).isoformat(),
         "settings": settings, "site": "resid_post at the final formatted-prompt token, before each reply",
-        "warning": "Exploratory in-sample UMAP per layer. Axes, distances and paths are not refusal measurements.",
+        "warning": ("Early PCA preview, not UMAP: waiting for six distinct recorded turns. "
+                    if settings.get("method") == "pca_preview" else "Exploratory in-sample UMAP per layer. ")
+                   + "Axes, distances and paths are not refusal measurements.",
         "semantic": {"layer": default, "core_label": semantic["core_label"], "labels": semantic["counts"],
                      "radial_mapping": "smooth_v1",
                      "reference_id": reference["id"], "reference_created_utc": reference["created_utc"],

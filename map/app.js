@@ -502,5 +502,29 @@
   else if (donut) { $('dataset').value = 'semantic'; loadDataset(semanticDataset()); }
   else if (window.RECORDINGS) { $('dataset').value = 'recordings'; loadDataset(recordingsDataset()); message(`No donut yet: ${window.RECORDINGS.semantic?.unavailable || 'rebuild the map with Update Map from Recordings.'}`, 12000); }
   else loadDataset(concept);
+  window.addEventListener('softrefusal:recordings', event => {
+    const source = event.detail;
+    if (!source?.points?.length) return;
+    const firstLive = !window.RECORDINGS;
+    const selectedId = selected?.point_id;
+    const previousCamera = { ...camera, target: { ...camera.target }, pan: { ...camera.pan } };
+    window.RECORDINGS = source;
+    const hasDonut = source.semantic && !source.semantic.unavailable;
+    const recordingOption = $('dataset').querySelector('[value=recordings]');
+    recordingOption.hidden = false;
+    recordingOption.textContent = source.settings?.method === 'pca_preview' ? 'Your recordings · early PCA preview' : 'Your recordings · UMAP';
+    $('dataset').querySelector('[value=semantic]').hidden = !hasDonut;
+    if (firstLive || ['semantic', 'recordings'].includes($('dataset').value)) {
+      const semantic = hasDonut && (firstLive || $('dataset').value === 'semantic');
+      $('dataset').value = semantic ? 'semantic' : 'recordings';
+      loadDataset(semantic ? semanticDataset() : recordingsDataset());
+      if (!firstLive) Object.assign(camera, previousCamera);
+      const conversation = new URLSearchParams(location.search).get('conversation');
+      const point = data.points.find(p => p.point_id === selectedId) || data.points.find(p => p.conversation_id === conversation);
+      if (point) selectPoint(point);
+      if (source.settings?.method === 'pca_preview') $('source-summary').textContent = 'Early PCA preview · not UMAP · waiting for six distinct turns';
+      dirty = true;
+    }
+  });
   requestAnimationFrame(frame);
 })();
