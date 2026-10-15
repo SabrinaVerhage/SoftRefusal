@@ -228,6 +228,7 @@
     const original = p.original_coordinates || [p.x, p.y, p.z];
     $('point-coordinates').textContent = data.kind === 'semantic' ? `CORE ${p.core_score.toFixed(2)} / ${Math.round((p.angle * 180 / Math.PI + 360) % 360)}°` : original.map(x => x.toFixed(2)).join(' / ');
     $('inspector-note').textContent = data.kind === 'semantic' ? `Reference score ${p.core_score.toFixed(2)} at layer ${data.layer}. 0 = answered reference mean; 1 = refused reference mean. ${data.semantic.frozen ? 'Fixed reference ' + data.semantic.reference_id.slice(0, 8) + '. Labels change markers, not position.' : 'Legacy layout fitted to the displayed labels.'} Radius is an artistic compression, not a probability. Links join pre-reply checkpoints.` : recorded() ? `The model’s internal state just before this reply, at layer ${data.layer}, placed by UMAP among your other turns. UMAP is refitted on export; this view is exploratory.` : data.kind === 'concept' ? 'An illustrative prompt, with an assigned response. Click any point to look closer.' : data.kind === 'umap' ? 'Synthetic data. Responses are assigned demo labels; neighbors use the 3D projection.' : 'Metadata from your file. Neighbors use the displayed 3D coordinates.';
+    if (data.kind === 'recordings' && data.settings?.method === 'pca_preview') $('inspector-note').textContent = `The model’s internal state just before this reply, at layer ${data.layer}. Early PCA preview, not UMAP; waiting for six distinct turns. This view is exploratory.`;
     if (recorded() && data.synthetic) {
       $('point-coordinates').textContent = 'ILLUSTRATIVE POSITION';
       $('inspector-note').textContent = 'Art-directed example of conversation replay. Paths, responses and outcomes are invented to demonstrate the interface. No model was queried; these are not measured trajectories.';
@@ -301,6 +302,7 @@
     if (!recorded()) return;
     const model = String(data.model_id || 'model').split('/').pop();
     $('source-summary').textContent = `Your recordings · ${model} · layer ${data.layer}`;
+    if (data.settings?.method === 'pca_preview') $('source-summary').textContent = `Early PCA preview · not UMAP · layer ${data.layer} · waiting for six distinct turns`;
     $('point-count').textContent = `${data.points.length} TURNS / ${data.conversations} CONVERSATIONS · LAYER ${data.layer}`;
   }
   function renderLayerSwitch() {
@@ -508,6 +510,7 @@
     const firstLive = !window.RECORDINGS;
     const selectedId = selected?.point_id;
     const previousCamera = { ...camera, target: { ...camera.target }, pan: { ...camera.pan } };
+    const previousLayer = data.layer;
     window.RECORDINGS = source;
     const hasDonut = source.semantic && !source.semantic.unavailable;
     const recordingOption = $('dataset').querySelector('[value=recordings]');
@@ -518,11 +521,11 @@
       const semantic = hasDonut && (firstLive || $('dataset').value === 'semantic');
       $('dataset').value = semantic ? 'semantic' : 'recordings';
       loadDataset(semantic ? semanticDataset() : recordingsDataset());
+      if (!firstLive && data.kind === 'recordings' && data.layers.includes(previousLayer)) setLayer(previousLayer);
       if (!firstLive) Object.assign(camera, previousCamera);
       const conversation = new URLSearchParams(location.search).get('conversation');
       const point = data.points.find(p => p.point_id === selectedId) || data.points.find(p => p.conversation_id === conversation);
       if (point) selectPoint(point);
-      if (source.settings?.method === 'pca_preview') $('source-summary').textContent = 'Early PCA preview · not UMAP · waiting for six distinct turns';
       dirty = true;
     }
   });
