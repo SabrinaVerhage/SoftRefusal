@@ -23,6 +23,7 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 from avoidance.chat import ChatService, DEFAULT_INSTRUCTION
 from avoidance.io import read_json
 from avoidance.remote import RemoteAdapter, load_connection
+from hosted.images import ImageJobs
 
 ROOT = Path(__file__).resolve().parents[1]
 COOKIE = "softrefusal_visitor"
@@ -32,7 +33,13 @@ log = logging.getLogger("softrefusal")
 
 class Gateway:
     def __init__(self, directory, connection_file, adapter_factory=None, map_enabled=True):
-        self.directory = Path(directory)
+        self.base_directory = Path(directory)
+        config_name = os.getenv("SOFT_REFUSAL_MODEL_CONFIG", "gemma3-12b-remote.json")
+        if config_name not in {"gemma3-12b-remote.json", "hermes4-14b-remote.json"}:
+            raise ValueError("Unsupported hosted model configuration")
+        config = read_json(ROOT / "recorder/configs" / config_name)
+        self.model = config["remote_model"]
+        self.directory = self.base_directory if self.model == "gemma" else self.base_directory / "models" / self.model
         self.directory.mkdir(parents=True, exist_ok=True)
         self.connection_file = Path(connection_file)
         self.lock = threading.RLock()
@@ -55,13 +62,17 @@ class Gateway:
           CREATE INDEX IF NOT EXISTS jobs_status ON jobs(status, created);
           CREATE TABLE IF NOT EXISTS admission(bucket TEXT NOT NULL, created REAL NOT NULL);
         """)
+        columns = {r[1] for r in self.db.execute("PRAGMA table_info(jobs)")}
+        for name, definition in {"kind": "TEXT NOT NULL DEFAULT 'chat'", "payload": "TEXT", "upstream_id": "TEXT"}.items():
+            if name not in columns:
+                self.db.execute(f"ALTER TABLE jobs ADD COLUMN {name} {definition}")
         self.db.execute("UPDATE jobs SET status='interrupted', error='The server restarted. Your saved replies are safe; send this message again.' WHERE status IN ('queued','running')")
         self.db.commit()
-        config = read_json(ROOT / "recorder/configs/gemma3-12b-remote.json")
         factory = adapter_factory or (lambda c: RemoteAdapter(c, load_connection(self.connection_file)))
         self.service = ChatService(config, self.directory / "recordings", adapter_factory=factory,
                                    auto_label=adapter_factory is None)
         self.test_adapter = adapter_factory is not None
+        self.images = ImageJobs(self)
         self.threads = []
 
     def start(self):
@@ -107,7 +118,7 @@ class Gateway:
                 self.db.execute("INSERT INTO visitors VALUES (?,?)", (owner, time.time()))
             if self.db.execute("SELECT 1 FROM jobs WHERE owner=? AND status IN ('queued','running')", (owner,)).fetchone():
                 raise HTTPException(409, "Wait for your reply or stop it before starting a new conversation.")
-            sid = self.service.create(DEFAULT_INSTRUCTION)
+            sid = self.service.create(self.service.config.get("default_instruction", DEFAULT_INSTRUCTION))
             self.db.execute("INSERT INTO conversations VALUES (?,?,?)", (sid, owner, time.time()))
             self.db.commit()
             return sid, token
@@ -141,7 +152,7 @@ class Gateway:
             self.limit("send:" + owner, 6)
             self.limit("ip:" + hashlib.sha256(ip.encode()).hexdigest(), 30)
             jid = secrets.token_hex(16)
-            self.db.execute("INSERT INTO jobs VALUES (?,?,?,?,?,?,?,?)", (jid, owner, sid, prompt.strip(), "queued", time.time(), None, key))
+            self.db.execute("INSERT INTO jobs(id,owner,conversation,prompt,status,created,error,request_key) VALUES (?,?,?,?,?,?,?,?)", (jid, owner, sid, prompt.strip(), "queued", time.time(), None, key))
             self.db.commit()
             self.wake.set()
             return jid
@@ -151,7 +162,7 @@ class Gateway:
             if not sid and owner:
                 row = self.db.execute("SELECT id FROM conversations WHERE owner=? ORDER BY created DESC LIMIT 1", (owner,)).fetchone()
                 sid = row[0] if row else None
-            result = {"conversation": sid, "rows": [], "job": None, "model": self.health, "map": self.map_state}
+            result = {"conversation": sid, "rows": [], "job": None, "model": {**self.health, "id": self.service.config["model_id"], "name": self.service.config.get("display_name", self.model), "auto_label": self.service.auto_label_enabled}, "map": self.map_state}
             if sid:
                 self.own(owner, sid)
                 state = self.service.state(sid)
@@ -184,10 +195,19 @@ class Gateway:
                 row = self.db.execute("SELECT * FROM jobs WHERE status='queued' ORDER BY created LIMIT 1").fetchone()
                 if row is None:
                     continue
+                if row["kind"] == "image":
+                    self.db.execute("UPDATE jobs SET status='running' WHERE id=?", (row["id"],))
+                    self.db.commit()
+            if row["kind"] == "image":
+                self.images.run(row)
+                continue
+            with self.lock:
+                if self.db.execute("SELECT status FROM jobs WHERE id=?", (row["id"],)).fetchone()[0] != "queued":
+                    continue
                 try:
                     self.db.execute("UPDATE jobs SET status='running' WHERE id=?", (row["id"],))
                     self.db.commit()
-                    self.service.submit(row["conversation"], row["prompt"], reply_limit=512)
+                    self.service.submit(row["conversation"], row["prompt"], reply_limit=min(1024, self.service.config["max_new_tokens"]))
                 except Exception:
                     self.db.execute("UPDATE jobs SET status='error', error=? WHERE id=?", ("Could not start this reply. Please try again.", row["id"]))
                     self.db.commit()
@@ -224,9 +244,11 @@ class Gateway:
                     req = urllib.request.Request(connection["api_url"] + "/v1/health", headers={"Authorization": "Bearer " + connection["access_code"], "User-Agent": "SoftRefusal/1"})
                     with urllib.request.urlopen(req, timeout=5) as response:
                         health = json.load(response)
-                    online = health.get("status") == "accepting" and health.get("models", {}).get("gemma", {}).get("enabled") is True
+                    online = health.get("status") == "accepting" and health.get("models", {}).get(self.model, {}).get("enabled") is True
+                    self.images.online = health.get("status") == "accepting" and health.get("models", {}).get("flux", {}).get("enabled") is True
                 self.health = {"online": bool(online), "message": "Model online" if online else "Model paused"}
             except Exception:
+                self.images.online = False
                 self.health = {"online": False, "message": "Model offline · saved conversations and map remain available"}
             self.stopping.wait(15)
 
@@ -341,11 +363,46 @@ def create_app(gateway=None, origin=None, secure=True):
         return {"ok": True}
 
     @app.get("/api/map")
-    def map_data():
-        path = gateway.directory / "map/public.json"
+    def map_data(model: str | None = None):
+        if model not in {None, "gemma", "hermes"}:
+            raise HTTPException(400, "Unknown model map.")
+        directory = gateway.directory if model is None else (gateway.base_directory if model == "gemma" else gateway.base_directory / "models/hermes")
+        path = directory / "map/public.json"
         if not path.exists():
             return {"points": [], "status": gateway.map_state}
         return FileResponse(path, media_type="application/json")
+
+    @app.post("/api/images/session")
+    async def image_session(request: Request):
+        body = await body_of(request)
+        if body.get("consent") is not True:
+            raise HTTPException(400, "Agree to the image storage notice before starting.")
+        token = gateway.images.session(request.cookies.get(COOKIE), request.client.host)
+        response = JSONResponse({"ok": True})
+        response.set_cookie(COOKIE, token, max_age=86400 * 7, httponly=True, secure=secure, samesite="lax")
+        return response
+
+    @app.get("/api/images")
+    def images_state(request: Request):
+        return gateway.images.state(owner(request))
+
+    @app.post("/api/images/jobs")
+    async def images_submit(request: Request):
+        body = await body_of(request)
+        return {"job": gateway.images.submit(owner(request), body, request.client.host)}
+
+    @app.get("/api/images/jobs/{jid}/result")
+    def image_result(jid: str, request: Request):
+        from fastapi.responses import Response
+        return Response(gateway.images.result(owner(request), jid), media_type="image/png")
+
+    @app.get("/images/")
+    def image_page():
+        return FileResponse(ROOT / "hosted/web/images.html")
+
+    @app.get("/images")
+    def image_redirect():
+        return RedirectResponse("/images/", status_code=308)
 
     @app.get("/")
     def phone():
@@ -353,7 +410,7 @@ def create_app(gateway=None, origin=None, secure=True):
 
     @app.get("/assets/{name}")
     def asset(name: str):
-        if name not in {"phone.css", "phone.js", "live.js"}:
+        if name not in {"phone.css", "phone.js", "live.js", "images.js", "images.css", "reasoning.js"}:
             raise HTTPException(404)
         return FileResponse(ROOT / "hosted/web" / name)
 
@@ -365,6 +422,7 @@ def create_app(gateway=None, origin=None, secure=True):
         text = text.replace('</body>', '<script src="/assets/live.js"></script></body>')
         text = text.replace('href="./index.html"', 'href="/"')
         text = text.replace('Rebuild it with <code>Update Map from Recordings.cmd</code>.', 'The hosted map updates automatically after completed conversations.')
+        text = text.replace('Gemma 3 12B’s internal state', 'the selected model’s internal state')
         return HTMLResponse(text)
 
     @app.get("/map")

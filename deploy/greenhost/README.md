@@ -41,3 +41,22 @@ PYTHONPATH=..:src python -m pytest ../hosted/tests tests/test_remote.py tests/te
 ```
 
 These tests use a local fake model API and do not incur GPU costs.
+
+## Weekend hosted setup — 16 October 2026
+
+The service selects `hermes4-14b-remote.json` with `SOFT_REFUSAL_MODEL_CONFIG`.
+Hermes recordings, visitor database and map live under `/var/lib/softrefusal/models/hermes`;
+existing Gemma data stays untouched at `/var/lib/softrefusal`. The earlier Gemma map
+is accessible at `/map/?model=gemma`; activation spaces and references never mix.
+Hermes automatic judgment is disabled pending model-specific validation. Generated
+`<think>` text is displayed separately while the full raw response is recorded.
+
+The separate `/images/` room uses the same durable serial queue as chat. Image jobs
+are owned by an HTTP-only visitor cookie and use the application token only on the
+server. The server calls `/v1/images/jobs`, `/v1/jobs/{id}`, and the authenticated PNG
+result endpoint. Completed PNGs are copied to private data storage and remain
+available after GPU shutdown. Technical failures and missing images are never
+automatically called refusals. Request size, per-owner concurrency, rate limits,
+queue capacity and disk-space checks bound admission. Model loading takes time
+when switching between chat and images. Reload recovers the owner's recent jobs;
+restart interrupts pending jobs without automatically resubmitting them.

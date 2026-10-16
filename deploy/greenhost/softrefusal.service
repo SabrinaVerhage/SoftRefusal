@@ -12,6 +12,7 @@ Environment=PYTHONPATH=/opt/softrefusal/current/recorder/src:/opt/softrefusal/cu
 Environment=SOFT_REFUSAL_DATA=/var/lib/softrefusal
 Environment=SOFT_REFUSAL_CONNECTION=/etc/softrefusal/gpu-connection.json
 Environment=SOFT_REFUSAL_ORIGIN=https://softrefusal.sabrinaverhage.com
+Environment=SOFT_REFUSAL_MODEL_CONFIG=hermes4-14b-remote.json
 Environment=NUMBA_NUM_THREADS=1
 Environment=OPENBLAS_NUM_THREADS=1
 Environment=OMP_NUM_THREADS=1

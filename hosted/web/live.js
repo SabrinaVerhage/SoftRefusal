@@ -1,9 +1,11 @@
 (() => {
   const banner=document.createElement('a');banner.href='/';banner.className='live-status';banner.textContent='← Recording room · Waiting for live conversations';document.body.append(banner);
   let version='';
+  const model = new URLSearchParams(location.search).get('model');
+  const mapQuery = ['gemma','hermes'].includes(model) ? '?model='+model : '';
   async function refresh(){
     try{
-      const response=await fetch('/api/map',{cache:'no-store'});if(!response.ok)throw Error('offline');const payload=await response.json();
+      const response=await fetch('/api/map'+mapQuery,{cache:'no-store'});if(!response.ok)throw Error('offline');const payload=await response.json();
       if(payload.points?.length){
         banner.textContent=`← Recording room · ${payload.points.length} recorded turns · ${payload.settings?.method==='pca_preview'?'Early PCA preview, not UMAP':'Live map'}`;
         if(version!==payload.created_utc){version=payload.created_utc;window.dispatchEvent(new CustomEvent('softrefusal:recordings',{detail:payload}));}
