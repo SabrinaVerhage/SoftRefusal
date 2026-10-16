@@ -211,3 +211,9 @@ Read this log, DEPLOYMENT_STATUS.md and README.md first. Inspect RunPod's curren
 - Live neutral browser test generated a lavender vase and orange flower, job fac639b7fbea90b9492bcbb4175ceb4e, 512x512, seed42. Browser verified the resulting gallery card and full-image dialog. Anonymous HTTPS retrieval returned image/png, 269974 bytes. Earlier private job65eefe0b09cfd4f171304c945f1d186f returned404 through the public endpoint. Phone layout checked at390px with one gallery column and no horizontal overflow.
 - Service healthy on the new release; existing weekend-stop timer still active. No RunPod resource, model configuration, budget or shutdown deadline changed. One live inference ran on the already-authorized weekend GPU; no stop/start action performed.
 - Deployment is currently from the review branch. Merge the PR before a future default main deployment to retain the gallery.
+
+## 16 October 2026: compact gallery layout
+
+- User requested smaller images with varied tile sizes and removal of top-right chat/map links. Added a responsive six-column desktop mosaic with occasional wider/taller tiles, three columns on phones, and full prompts on hover/focus or in the existing image dialog. Removed the two navigation links.
+- Checked a 16-card local fixture with repeated neutral flower images at desktop and390px widths; no phone overflow. JavaScript syntax and diff checks passed. No new inference or LoRA downloads were performed.
+- Deployed561be0deb72d600a7fa844152b5ebcc9049dd493 from codex/image-gallery using the idle-queue deployment. Live page confirms only the brand link in the header, dense grid flow and mixed183/378px tile widths. Previous release20d4964 retained. Same review PR and unchanged GPU budget/deadline.

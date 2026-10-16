@@ -9,7 +9,7 @@ All four older Pods were verified stopped at $0.00/hour in RunPod. Original BF16
 native model templates, one resident model and the shared serial GPU queue remain.
 
 - Public chat: https://softrefusal.sabrinaverhage.com/ now serves Hermes 4 14B with
-  emitted reasoning separate from the final answer. Website release `20d4964b62041d7ffe2c6d200f0cdc9ad0c88a5f`.
+  emitted reasoning separate from the final answer. Website release `561be0deb72d600a7fa844152b5ebcc9049dd493`.
 - Public image gallery: https://softrefusal.sabrinaverhage.com/gallery/ shows completed
   images submitted with explicit sharing consent. Earlier private images remain private.
   Deployed from `codex/image-gallery`; draft PR https://github.com/SabrinaVerhage/SoftRefusal/pull/1
