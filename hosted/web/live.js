@@ -2,10 +2,12 @@
   // Live status sits quietly in the masthead; the map and recording room are separate pages.
   const label = document.getElementById('edition-text');
   let version = '';
+  const model = new URLSearchParams(location.search).get('model');
+  const mapQuery = ['gemma', 'hermes'].includes(model) ? '?model=' + model : '';
   label.textContent = 'CONNECTING';
   async function refresh() {
     try {
-      const response = await fetch('/api/map', {cache: 'no-store'}); if (!response.ok) throw Error('offline'); const payload = await response.json();
+      const response = await fetch('/api/map' + mapQuery, {cache: 'no-store'}); if (!response.ok) throw Error('offline'); const payload = await response.json();
       if (payload.points?.length) {
         const conversations = new Set(payload.points.map(p => p.conversation_id)).size;
         label.textContent = `LIVE · ${conversations} ${conversations === 1 ? 'CONVERSATION' : 'CONVERSATIONS'}`;

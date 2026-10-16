@@ -81,3 +81,13 @@ footer{padding-top:14px;font-family:var(--mono);font-size:10px;color:var(--muted
 @keyframes pulse{50%{opacity:.25}}
 @media(min-width:760px){.room{padding-left:40px;padding-right:40px;border-inline:1px solid #241c2615}.welcome{padding-top:50px}}
 @media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important;animation:none!important}}
+
+/* Shared navigation and image-room header retained alongside the phone redesign. */
+a{color:inherit;touch-action:manipulation}
+a:focus-visible{outline:2px solid #9255a8;outline-offset:3px}
+.room-nav{display:flex;justify-content:flex-end;flex-wrap:wrap;gap:20px;padding:12px 0;font-family:var(--mono);font-size:11px}
+.image-room header{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:25px 0;border-bottom:1px solid var(--line)}
+.image-room .brand{font-family:var(--sans);font-size:27px;text-decoration:none}
+.image-room .brand span{font-weight:800;letter-spacing:.07em;font-size:12px}
+.image-room .brand small{display:block;font-size:8px;font-weight:500;letter-spacing:.11em;margin-top:4px}
+.image-room .map-link{font-size:12px;padding:12px 0;white-space:nowrap;text-decoration:none}

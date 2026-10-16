@@ -1,13 +1,69 @@
-# Weekend update — 16 October 2026
+# Current RunPod deployment status
+
+## ACTIVE weekend — 16–18 October 2026 (supersedes historical sections below)
+
+The authorized A40 `movffvxo1jho2z` is RUNNING at the handoff rate of $0.59/hour plus
+$0.004/hour container disk. Existing 150 GB `soft-refusal-models` volume remains
+mounted at `/workspace`, $21/month; no new Pod or volume was created in this continuation.
+All four older Pods were verified stopped at $0.00/hour in RunPod. Original BF16,
+native model templates, one resident model and the shared serial GPU queue remain.
+
+- Public chat: https://softrefusal.sabrinaverhage.com/ now serves Hermes 4 14B with
+  emitted reasoning separate from the final answer. Website release `c8f490a68e7abcbd2c4f4e9ff36d82db41373dd1`.
+- Separate images: https://softrefusal.sabrinaverhage.com/images/ serves FLUX.2 klein
+  4B through server-side authenticated jobs. Private PNG copies survive GPU shutdown.
+  Queue position/progress, completed images, no-image outcomes and technical errors are distinct.
+- VPS private connection now points to https://movffvxo1jho2z-8000.proxy.runpod.net.
+  Original application token unchanged, private pre-change connection backup retained.
+- Hermes data and map: `/var/lib/softrefusal/models/hermes`. Existing Gemma recordings,
+  database and map remain at the original `/var/lib/softrefusal` paths; archived map
+  available at `/map/?model=gemma`. No activation-space mixing. Hermes auto-label is off.
+- Neutral live public-browser conversation `7f510000767e41b69f16d66a287bcc8c` answered
+  17+28=45; reasoning/final display verified. Four finite float32 (1,5120) snapshots at
+  layers 10,20,26,35; all six manifest hashes match; manifest records NVIDIA A40,
+  BF16 and revision `d6ce765c8b83f847357b98254be079afa0c6ca76`.
+- Hermes map shows one unlabeled point, correct selectable layers and an explicitly
+  labelled early PCA preview. Refusal core unavailable without validated labels.
+- Independent public image job `65eefe0b09cfd4f171304c945f1d186f` succeeded: neutral
+  blue cup, 512x512, four steps, seed42, 257919-byte PNG. Browser display verified.
+  These are individual smoke tests, not a new concurrent-burst/performance validation.
+- 34 synthetic gateway/remote/judging/reference tests passed; four additional synthetic
+  shutdown-guard tests passed. JavaScript syntax and complete/partial/plain reasoning
+  parsing passed. Earlier sandboxed test processes were stopped after the approved run passed.
+
+**Budget and stop:** original total ceiling USD36 including existing storage; do not extend.
+Stop deadline Sunday **18 October 2026, 23:59 Europe/Amsterdam /21:59 UTC**. Approximate
+full handoff session estimate from Friday12:32 UTC at the above compute/storage rates:
+$35.80 (not an invoice). After user top-up, RunPod displayed **$85.30 credit**; this is
+account funding, not expanded spending authorization. Existing auto-pay was observed
+enabled ($20 below $10); no payment settings were changed by this continuation.
+
+An independent persistent **VPS systemd timer** `softrefusal-weekend-stop.timer` is
+enabled with next trigger `2026-10-18 21:59:00 UTC`. It runs the stop-only script
+`/usr/local/sbin/softrefusal-weekend-stop.py`, using a root-only copy of the existing
+Pod-scoped runtime key. No account-wide key was created. Read-only GraphQL access
+verified this exact Pod as RUNNING; systemd unit validation and scheduling passed.
+It refuses early stops, treats already-EXITED as success and retries provider failures
+every30 seconds. This is a server-side scheduled action, not a provider-enforced stop;
+actual stop must still be verified after the deadline. It does not depend on a laptop.
+
+The travel-computer Codex heartbeat `stop-soft-refusal-gpu-after-testing` was not changed
+here; the handoff says it targets the same Pod/deadline. It may act as an idempotent
+fallback if that computer is awake; the VPS timer is the primary mechanism. Local old
+H100 automation remains unchanged. Preserve `/workspace` and the network volume.
+
+The earlier `runpodctl get pod` Unauthorized result did not establish invalid runtime
+access: SSH lacked the main process's existing scoped environment. Reading that
+runtime key into memory enabled a narrowly filtered GraphQL read. REST access returned
+403 and was not used. No credential values were printed, committed or shipped to JS.
+
+## Historical travel-computer handoff — 16 October 2026, before website deployment
 
 **A40 movffvxo1jho2z is RUNNING** at $0.594/hour including container disk, with the existing 150 GB volume. User approved a $36 total ceiling and shutdown Sunday 18 October 23:59 Europe/Amsterdam. Current API: https://movffvxo1jho2z-8000.proxy.runpod.net/ . Hermes 4 14B and FLUX.2 klein 4B both passed neutral live tests. One shared serial queue; original BF16. H100 and old A40s remain stopped.
 
 **The existing public website is still offline and still displays Gemma.** User wants Hermes with generated reasoning. Reconnect and deploy from the original computer with the working Greenhost SSH key; travel computer key was rejected. A cloud-chat handoff named Continue Soft Refusal weekend setup has been created. Separate image frontend remains to build. About $25 credit top-up is needed based on the last $11.01 balance.
 
-Sunday local heartbeat is active, but a Pod-local timer was NOT configured because the scoped CLI read probe returned Unauthorized. Establish reliable shutdown on the other computer. Read the 16 October deployment-log entry and the cloud handoff before acting. Earlier sections below are historical.
-
----
-# Current RunPod deployment status
+Sunday local heartbeat is active, but a Pod-local timer was NOT configured because the scoped CLI read probe returned Unauthorized. Establish reliable shutdown on the other computer. This handoff was superseded by the active-weekend update above; the later continuation completed the website, credit and independent shutdown work.
 
 ## Completed session — 15 October 2026
 

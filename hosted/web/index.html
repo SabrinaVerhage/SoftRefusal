@@ -13,11 +13,14 @@
     <span class="brand"><span class="brand-mark" aria-hidden="true">✳</span>SOFT REFUSAL</span>
     <span class="handle">@sextechsabrina</span>
   </header>
+  <nav class="room-nav" aria-label="Explore Soft Refusal"><a href="/images/">Image testing ↗</a><a href="/map/">View map ↗</a></nav>
 
   <section id="welcome" class="welcome">
     <h1>SOFT<br>REFUSAL<span class="period">.</span></h1>
     <p class="subtitle">Mapping the sexual avoidance<br>of artificial intelligence</p>
     <p class="lede">AI language models are designed to set boundaries around explicit sexual content. Lead an AI into sexual territory and discover what triggers its avoidance.</p>
+
+    <p class="fine">Talk with <span id="model-name">the model</span>.</p>
 
     <div class="mission">
       <span class="eyebrow">YOUR MISSION</span>
@@ -36,7 +39,8 @@
       <label><input id="consent" type="checkbox"> <span>I understand and agree to share this conversation.</span></label>
     </div>
     <button id="start" class="primary" disabled>Start the conversation <span aria-hidden="true">→</span></button>
-    <p class="fine">Replies are written by an AI language model. Its “thinking” is generated text, not a full account of how it decides. Automatic answered / redirected / refused labels can be wrong.</p>
+    <p id="model-info" class="fine">Replies are written by an AI language model. Its “thinking” is generated text, not a full account of how it decides. The map is exploratory, not a calibrated measure of refusal.</p>
+    <p class="fine"><a href="/map/?model=gemma">View the earlier Gemma recordings ↗</a></p>
   </section>
 
   <section id="conversation" class="conversation" hidden>
@@ -61,6 +65,7 @@
   <footer><span id="connection" class="connection">Connecting…</span></footer>
   <p id="error" class="error" role="alert" hidden></p>
 </main>
+<script src="/assets/reasoning.js"></script>
 <script src="/assets/phone.js"></script>
 </body>
 </html>
