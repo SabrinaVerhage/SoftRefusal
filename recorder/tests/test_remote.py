@@ -199,7 +199,7 @@ def test_stop_cancels_on_the_gpu_and_saves_nothing(tmp_path, monkeypatch):
 
 @pytest.mark.parametrize("mode, message", [
     ("too_long", "reached the recording length limit"),
-    ("wrong_revision", "different Gemma checkpoint"),
+    ("wrong_revision", "different model checkpoint"),
 ])
 def test_cloud_failures_keep_previous_recordings(tmp_path, monkeypatch, mode, message):
     monkeypatch.setattr("avoidance.remote.POLL_SECONDS", 0.01)

@@ -143,7 +143,7 @@ class RemoteAdapter:
         if job["status"] != "succeeded":
             raise RemoteError(self._failure(job["status"], result))
         if (result.get("model"), result.get("revision")) != (self.config["model_id"], self.config["revision"]):
-            raise RemoteError("The cloud GPU is serving a different Gemma checkpoint than this recording "
+            raise RemoteError("The cloud GPU is serving a different model checkpoint than this recording "
                               "configuration. Nothing was saved.")
         relay.final(result)
         vectors = self._download(job["job_id"], result["activations"])
@@ -233,7 +233,7 @@ class Relay:
             return
         progress = job.get("progress") or {}
         if progress.get("phase") == "loading":
-            self.once("loading", "loading", message="The cloud GPU is loading Gemma 3 12B. This takes about a "
+            self.once("loading", "loading", message="The cloud GPU is loading the selected model. This takes about a "
                                                     "minute after a pause or a model switch.")
         self.relay(progress, final=False)
 
@@ -265,8 +265,8 @@ class Relay:
                 self.emit("snapshot", **snap, message=f"Captured layer {snap['layer']}: {snap['dimensions']:,} numbers.")
         candidates = trace.get("candidates", [])
         if candidates or progress.get("output_tokens"):
-            self.once("generating", "generating", message="Snapshots captured during Gemma's first reading of the "
-                                                          "conversation. Gemma is now writing.")
+            self.once("generating", "generating", message="Snapshots captured during the model's first reading of the "
+                                                          "conversation. The model is now writing.")
         for entry in candidates:
             # Live progress shows a recent window. Keep decisions in order; the final result fills any gap.
             if entry["step"] == self.candidates:

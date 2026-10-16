@@ -1,12 +1,16 @@
 # Current RunPod deployment status
 
-## Active session — 15 October 2026
+## Completed session — 15 October 2026
 
-**RUNNING: soft-refusal-h100-session, Pod `00yqqxrkv65o6w`, H100 SXM 80 GB, $3.99/hour compute plus container storage.** User approved one hour, approximately $4 compute. Started around 13:00 UTC; stop by **14:00 UTC / 16:00 Europe/Berlin**. A one-shot Codex thread shutdown follow-up is active; it is not a provider-enforced timer. Verify actual shutdown and update this section.
+**STOPPED at 14:00 UTC /16:00 Europe/Berlin on15 October2026, as requested.** Pod00yqqxrkv65o6w shows Start for $3.99/hr and compute Not running; all four Pod rows show $0.00/hr. Existing soft-refusal-models volume remains attached at /workspace and remains billable. No Pod or storage deleted. The one-hour shutdown follow-up is paused. A new approved paid session is required for further inference. Local viewers and saved recordings remain available.
 
-Existing `soft-refusal-models` 150 GB volume is mounted at `/workspace`; the three older A40 Pods remain stopped at $0.00/hour. No old Pod or volume was deleted. The preserved backend was started using `scripts/start.sh`, admission enabled, bind `0.0.0.0`, Hermes not enabled, with log `runtime/api-h100-20261015.log`. API URL: https://00yqqxrkv65o6w-8000.proxy.runpod.net/ . Local Recording Room is on port 8766; viewer is on port 8777.
+Existing `soft-refusal-models` 150 GB volume is mounted at `/workspace`; the three older A40 Pods remain stopped at $0.00/hour. No old Pod or volume was deleted. The preserved backend was started using `scripts/start.sh`, admission enabled, bind `0.0.0.0`, Hermes enabled after the user-requested switch, with current log `runtime/api-h100-hermes-20261015.log`. API URL: https://00yqqxrkv65o6w-8000.proxy.runpod.net/ . Local Recording Room is on port 8766; viewer is on port 8777.
 
-Local private connection settings use this new API URL and the existing non-admin `rehearsal-2` application credential recovered from the Pod. No credentials were changed or printed. Authenticated Gemma health and one live neutral end-to-end recording passed: conversation `f0585c1a7ec34d39b26dab2f25b9fe01`, four finite float32 snapshots of 3,840 values, six file hashes verified, pinned Gemma 12B BF16 on H100. API PID 1747 is current for this session only. The `recording-room` token itself was absent from this checkout and the Pod's token files. New recordings use the existing rehearsal-2 owner. Earlier status sections below are historical and do not describe the active H100 session.
+Local private connection settings use this new API URL and the existing non-admin `rehearsal-2` application credential recovered from the Pod. No credentials were changed or printed. Authenticated Gemma health and one live neutral end-to-end recording passed: conversation `f0585c1a7ec34d39b26dab2f25b9fe01`, four finite float32 snapshots of 3,840 values, six file hashes verified, pinned Gemma 12B BF16 on H100. API PID 1747 was stopped for the Hermes-enabled restart; do not reuse it. The `recording-room` token itself was absent from this checkout and the Pod's token files. New recordings use the existing rehearsal-2 owner. Earlier status sections below are historical and do not describe the active H100 session.
+
+Automatic reply tagging is now enabled in the local recorder (separate Gemma v3 judgment, with human corrections taking precedence). Existing recordings were backfilled; the local viewer export has 29 turns from seven conversations, 25 automatic and four human labels. This is exploratory annotation: live inspection found history-related judge mistakes, and a candidate prompt revision was rejected after a regression check. See the latest deployment-log entry.
+
+Hermes Recording Room remains available locally on port8768 with visible thinking/final-answer sections and separate runs/hermes-chat recordings. A neutral end-to-end test passed. Hermes auto-tagging is not yet validated and is disabled; use manual labels. User reaffirmed the16:00 Berlin stop time.
 
 ## Historical handoff
 

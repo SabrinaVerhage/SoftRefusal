@@ -12,3 +12,5 @@
 .label-option{font:inherit;font-size:10px;padding:4px 10px;border:1px solid #c9d0c1;border-radius:20px;background:transparent;color:#4b5a4c;cursor:pointer}
 .label-option:hover{border-color:#2e574c}
 .label-option.active{background:#2e574c;border-color:#2e574c;color:#faf8f2}
+
+.thinking-panel{margin:10px 0;padding:12px;border:1px solid #b9c9bb;border-radius:8px;background:#f0f4ed}.thinking-panel summary{cursor:pointer;font-weight:600;color:#315b4c}.thinking-note{font-size:10px;color:#657764;margin:6px 0}.thinking-panel .message-body{font-size:13px}

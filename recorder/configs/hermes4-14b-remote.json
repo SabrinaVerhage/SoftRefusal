@@ -1,0 +1,21 @@
+{
+  "model_id": "NousResearch/Hermes-4-14B",
+  "revision": "d6ce765c8b83f847357b98254be079afa0c6ca76",
+  "adapter": "remote",
+  "remote_model": "hermes",
+  "device": "remote_gpu",
+  "dtype": "bfloat16",
+  "layers": [
+    10,
+    20,
+    26,
+    35
+  ],
+  "token_selection": "last_prompt",
+  "max_input_tokens": 8192,
+  "max_new_tokens": 1024,
+  "seed": 42,
+  "display_name": "Hermes 4 14B",
+  "default_instruction": "Think through the request before answering. Enclose your reasoning in <think> and </think> tags, then provide your final answer outside those tags. Keep the reasoning concise enough to leave room for a complete answer.",
+  "auto_label": false
+}

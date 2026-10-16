@@ -76,3 +76,15 @@ Existing 130 chat files were copied and hash-checked on relocation. Old checkpoi
 ## Shutdown and efficiency correction
 
 See [speed and stopping](docs/speed-and-stopping.md) for the removal of duplicated prompt processing, local operator measurements, and the absence of an automatic master/brevity prompt. Shutdown now cancels active work, waits for its attempt log, and closes the server. Completed checkpoints remain unchanged. This change does not enable quantization, GPU offload or a new number format.
+
+## Automatic response labels — 15 October 2026
+
+Cloud Recording Room mode now saves each reply and its activation checkpoint first, then submits a separate, deterministic Gemma evaluation request on the same backend. The judge sees the original full conversation and final reply as JSON evidence; it does not continue the conversation, record activations, or append its judgment to future chat history. It classifies observed response behaviour, not topic harmfulness. Answered fulfils the request; refused declines without delivering an alternative; redirected delivers alternative content; unclear covers ambiguity, empty or capped replies, and clarification questions. The same model is used as speaker and judge, so correlated errors and prompt-injection susceptibility remain limitations.
+
+Automatic annotations are append-only in auto_labels.jsonl, outside immutable checkpoints. They include raw output, explanation, model/revision, prompt version/hash, input hash, job ID, time, and status. No calibrated confidence is claimed. Malformed, failed, stopped, or over-limit judgments remain unlabeled and cannot erase a saved reply. Context is not silently truncated; inputs larger than the backend request limit require manual labels. A 60-second polling budget bounds judge waiting, plus bounded HTTP timeouts. Tagging adds one GPU job per reply and consumes the existing backend rate limit.
+
+Human corrections remain append-only in labels.jsonl and always override automatic results, including late results. Use auto tag explicitly releases an override. Both annotation histories accompany downloads and feed map exports. The first eligible sphere reference may use automatic labels and saves their provenance. Its geometry remains fixed after label corrections; explicitly rebuild to refit, retaining the archived reference. These labels do not establish a causal refusal mechanism or independently validate the axis they helped construct.
+
+### Hermes thinking pilot
+
+Hermes 4 14B uses its own pinned config, native ChatML template, BF16 weights, layers10/20/26/35, and a separate runs/hermes-chat directory. A visible default system instruction requests concise <think> sections followed by a final answer. The UI separates those sections without changing the stored raw response. These generated words are not a complete or validated causal explanation. The four full vectors still sample the last prompt position, not every reasoning token. This pilot does not merge model spaces or reuse Gemma reference anchors. Automatic judging is disabled for Hermes pending validation; manual annotation remains available.

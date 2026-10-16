@@ -50,7 +50,7 @@ class ChatService:
         self.closing = False
         self.sessions = {}
         self.remote = self.config.get("adapter") == "remote"
-        self.auto_label_enabled = auto_label and self.remote
+        self.auto_label_enabled = auto_label and self.remote and self.config.get("auto_label", True)
         self.label_task = None
         for path in self.root.glob("*/session.json"):
             meta = read_json(path)
@@ -228,7 +228,10 @@ class ChatService:
                     if self.adapter is None:
                         from .remote import RemoteAdapter
                         self.adapter = (self.adapter_factory or RemoteAdapter)(self.config)
-                    for row in rows:
+                    for index, row in enumerate(rows):
+                        # The shared backend allows six submissions/minute per credential.
+                        if index and self.cancel.wait(11):
+                            break
                         if self.cancel.is_set():
                             break
                         verdict = self._label_saved(sid, row)
@@ -429,7 +432,7 @@ def make_handler(service):
                     raise ValueError("Invalid request size")
                 data = json.loads(self.rfile.read(length))
                 if self.path == "/api/new":
-                    return self.respond({"session": service.create(data.get("instruction", DEFAULT_INSTRUCTION))})
+                    return self.respond({"session": service.create(data.get("instruction", service.config.get("default_instruction", DEFAULT_INSTRUCTION)))})
                 if self.path == "/api/instruction":
                     service.set_instruction(data["session"], data["instruction"])
                     return self.respond({"ok": True})

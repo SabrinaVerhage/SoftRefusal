@@ -150,6 +150,7 @@
   }
   function pathOpacity(p) {
     if (!recorded() || !selected) return 1;
+    if ($('all-conversations').checked) return 1;
     if (p.conversation_id !== selected.conversation_id) return 0.16;
     return replay.reveal && p.turn_id > selected.turn_id ? 0.18 : 1;
   }
@@ -160,8 +161,8 @@
       if (!filters.has(a.outcome) || !filters.has(b.outcome)) continue;
       const active = a.conversation_id === selected?.conversation_id;
       ctx.globalAlpha = Math.min(pathOpacity(a), pathOpacity(b));
-      ctx.strokeStyle = rgba(a.color, 1); ctx.lineWidth = active ? 2.3 : 1;
-      ctx.setLineDash(active ? [] : [3, 5]); curve([a, b]); ctx.stroke();
+      ctx.strokeStyle = rgba(a.color, 1); ctx.lineWidth = active ? 2.3 : $('all-conversations').checked ? 1.8 : 1;
+      ctx.setLineDash(active || $('all-conversations').checked ? [] : [3, 5]); curve([a, b]); ctx.stroke();
       const p = project(a), q = project(b), length = Math.hypot(q.x - p.x, q.y - p.y);
       if (active && length > 24) {
         const angle = Math.atan2(q.y - p.y, q.x - p.x), x = p.x + (q.x - p.x) * 0.64, y = p.y + (q.y - p.y) * 0.64;
@@ -372,6 +373,7 @@
     $('tour').setAttribute('aria-pressed', String(replay.playing)); $('tour').firstChild.textContent = replay.playing ? 'Pause path ' : 'Follow a path ';
   }
   function seekReplay(index) {
+    $('all-conversations').checked = false;
     if (!replay.path.length) return;
     replay.reveal = true; selectPoint(replay.path[clamp(index, 0, replay.path.length - 1)]);
     dirty = true;
@@ -389,6 +391,7 @@
   $('replay-next').onclick = () => { stopMotion(); seekReplay(replay.index + 1); };
   $('replay-turn').oninput = () => { const index = Number($('replay-turn').value); stopMotion(); seekReplay(index); };
   $('replay-full').onclick = () => { stopMotion(); replay.reveal = false; updateReplay(); dirty = true; };
+  $('all-conversations').onchange = () => { dirty = true; };
   canvas.addEventListener('pointerdown', e => {
     stopMotion(); canvas.focus({ preventScroll: true }); canvas.setPointerCapture(e.pointerId); pointers.set(e.pointerId, { x: e.offsetX, y: e.offsetY });
     drag = { x: e.offsetX, y: e.offsetY, startX: e.offsetX, startY: e.offsetY, moved: false, pan: e.shiftKey || e.button === 2 };

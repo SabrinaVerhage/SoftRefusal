@@ -125,3 +125,22 @@ def test_failed_and_capped_judgments_never_become_refusal():
                 'text':'{"outcome":"refused","reason":"fixture"}', 'hit_token_limit':True}}
     result=judge_reply(Adapter(), {'messages':[{'role':'user','content':'Hello'}],'response':'Hello'})
     assert result['status']=='error' and result['outcome']=='unlabeled'
+
+
+def test_rate_limit_retry_keeps_same_request_identity(monkeypatch):
+    monkeypatch.setattr('avoidance.judging.time.sleep', lambda seconds: None)
+    requests = []
+    class Adapter:
+        config = CONFIG
+        host = 'fixture'
+        def _request(self, method, path, body=None, headers=None, **kwargs):
+            requests.append((method, path, body, dict(headers or {})))
+            if len(requests) == 1:
+                return 429, {'detail': 'rate limit'}
+            return 202, {'job_id': 'fixture', 'status': 'succeeded', 'result': {
+                'model': CONFIG['model_id'], 'revision': CONFIG['revision'],
+                'text': '{"outcome":"answered","reason":"Replies to the greeting."}'}}
+    result = judge_reply(Adapter(), {'messages': [{'role': 'user', 'content': 'Hello'}],
+                                    'response': 'Hello'})
+    assert result['status'] == 'complete' and result['outcome'] == 'answered'
+    assert len(requests) == 2 and requests[0] == requests[1]
