@@ -9,7 +9,11 @@ All four older Pods were verified stopped at $0.00/hour in RunPod. Original BF16
 native model templates, one resident model and the shared serial GPU queue remain.
 
 - Public chat: https://softrefusal.sabrinaverhage.com/ now serves Hermes 4 14B with
-  emitted reasoning separate from the final answer. Website release `c8f490a68e7abcbd2c4f4e9ff36d82db41373dd1`.
+  emitted reasoning separate from the final answer. Website release `20d4964b62041d7ffe2c6d200f0cdc9ad0c88a5f`.
+- Public image gallery: https://softrefusal.sabrinaverhage.com/gallery/ shows completed
+  images submitted with explicit sharing consent. Earlier private images remain private.
+  Deployed from `codex/image-gallery`; draft PR https://github.com/SabrinaVerhage/SoftRefusal/pull/1
+  must be merged before a future default-main deployment to retain this feature.
 - Separate images: https://softrefusal.sabrinaverhage.com/images/ serves FLUX.2 klein
   4B through server-side authenticated jobs. Private PNG copies survive GPU shutdown.
   Queue position/progress, completed images, no-image outcomes and technical errors are distinct.
