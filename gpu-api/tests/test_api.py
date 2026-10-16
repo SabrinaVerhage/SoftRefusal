@@ -86,6 +86,29 @@ def body(model="gemma", content="Hello"):
     return {"model": model, "messages": [{"role": "user", "content": content}]}
 
 
+def test_image_adapter_admission_and_payload(tmp_path, monkeypatch):
+    ready = []
+    monkeypatch.setattr("soft_refusal.queue.available_adapters", lambda: ready)
+    backend = FakeBackend()
+    with TestClient(create_app(setup(tmp_path), backend)) as client:
+        selected = {"prompt": "A fully clothed adult portrait", "lora": "body-shape-v1", "lora_strength": .6}
+        assert client.post("/v1/images/jobs", json=selected, headers=headers()).status_code == 503
+        assert backend.payloads == []
+        ready.append({"id": "body-shape-v1", "available": True})
+        response = client.post("/v1/images/jobs", json=selected, headers=headers(key="adapter-test"))
+        assert response.status_code == 202
+        completed(client, response.json()["job_id"])
+        assert backend.payloads[0]["lora"] == "body-shape-v1"
+        assert backend.payloads[0]["lora_strength"] == .6
+        ready.clear()
+        assert client.post("/v1/images/jobs", json=selected, headers=headers(key="adapter-test")).json()["job_id"] == response.json()["job_id"]
+        assert client.post("/v1/images/jobs", json={**selected, "lora_strength": .8},
+                           headers=headers(key="adapter-test")).status_code == 409
+        original = client.post("/v1/images/jobs", json={"prompt": "A ceramic cup"}, headers=headers())
+        completed(client, original.json()["job_id"])
+        assert "lora" not in backend.payloads[1]
+
+
 def completed(client, job_id, actor="alice"):
     deadline = time.monotonic() + 3
     while time.monotonic() < deadline:

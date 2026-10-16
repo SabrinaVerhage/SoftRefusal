@@ -12,6 +12,7 @@ from pathlib import Path
 
 from .config import MODELS
 from .progress import cancel_marker, write_progress
+from .loras import image_adapter
 
 # Progress snapshots are re-read by the page/recording room every poll; keep a
 # window of recent candidates there. The final result holds every decision.
@@ -402,10 +403,11 @@ class Runner:
         count = len(tokenizer(formatted, truncation=False)["input_ids"])
         if count > 512:
             raise ModelFailure("input_too_long", input_tokens=count, limit_tokens=512)
-        with torch.inference_mode():
-            output = self.pipe(prompt=payload["prompt"], height=payload["height"], width=payload["width"],
-                               guidance_scale=1.0, num_inference_steps=4, max_sequence_length=512,
-                               generator=torch.Generator(device="cuda").manual_seed(payload["seed"]))
+        with image_adapter(self.pipe, payload.get("lora", "none"), payload.get("lora_strength", 0.7)) as adapter:
+            with torch.inference_mode():
+                output = self.pipe(prompt=payload["prompt"], height=payload["height"], width=payload["width"],
+                                   guidance_scale=1.0, num_inference_steps=4, max_sequence_length=512,
+                                   generator=torch.Generator(device="cuda").manual_seed(payload["seed"]))
         torch.cuda.synchronize()
         flags = getattr(output, "nsfw_content_detected", None)
         flags = [bool(flag) for flag in flags] if flags is not None else None
@@ -420,6 +422,7 @@ class Runner:
         output.images[0].save(temporary, format="PNG")
         temporary.replace(path)
         return {"image_available": True, "outcome": "unlabeled", "label_source": None,
+                "lora": adapter,
                 "width": payload["width"], "height": payload["height"],
                 "image_sha256": __import__("hashlib").sha256(path.read_bytes()).hexdigest(),
                 "filter_signal": flags if flags is not None else "not_reported_by_pipeline",

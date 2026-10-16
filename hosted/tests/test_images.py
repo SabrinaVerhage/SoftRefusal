@@ -170,3 +170,39 @@ def test_gallery_pagination_excludes_private_and_incomplete(tmp_path):
         assert second["next_offset"] is None
         assert client.get("/api/gallery?offset=-1").status_code == 400
         assert client.get("/api/gallery/27/image").status_code == 404
+
+
+def test_lora_readiness_payload_idempotency_and_gallery_metadata(tmp_path):
+    g, app = make(tmp_path)
+    calls = []
+    def request(path, body=None, key=None, binary=False):
+        if body is not None:
+            calls.append(body)
+        return PNG if binary else {"job_id": "d" * 32, "status": "succeeded",
+                                   "result": {"image_available": True}}
+    g.images.request = request
+    with TestClient(app) as client:
+        enter(client)
+        g.images.online = True
+        assert submit(client, lora="https://example.com/adapter").status_code == 400
+        assert submit(client, lora_strength=True).status_code == 400
+        assert submit(client, lora_strength=1.1).status_code == 400
+        selected = dict(lora="body-shape-v1", lora_strength=.6, share_gallery=True)
+        assert submit(client, **selected).status_code == 503
+        assert not client.get("/api/images").json()["loras"][0]["available"]
+        g.images.available_loras = {"body-shape-v1"}
+        assert client.get("/api/images").json()["loras"][0]["available"]
+        result = submit(client, **selected)
+        assert result.status_code == 200
+        job = finish(client)
+        assert calls[0]["lora"] == "body-shape-v1"
+        assert calls[0]["lora_strength"] == .6
+        assert job["lora"]["strength"] == .6
+        assert len(job["lora"]["sha256"]) == 64
+        assert client.get("/api/gallery").json()["images"][0]["lora"] == job["lora"]
+        g.images.available_loras.clear()
+        assert submit(client, **selected).json() == result.json()
+        assert submit(client, **{**selected, "lora_strength": .8}).status_code == 409
+        assert submit(client, key="original-model-002").status_code == 200
+        finish(client)
+        assert "lora" not in calls[1]

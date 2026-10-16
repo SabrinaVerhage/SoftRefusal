@@ -1,0 +1,13 @@
+{
+  "body-shape-v1": {
+    "name": "Body shape · portrait",
+    "description": "A broader, stockier adult male body shape. Intended here for non-explicit portraits.",
+    "creator": "hejl1622",
+    "source_url": "https://civitai.red/models/2558153?modelVersionId=2711426",
+    "version": "2711426",
+    "base_model": "Flux.2 Klein 4B-base",
+    "filename": "flux2_4B_ID_01B_DadBod_6.safetensors",
+    "sha256": "db64592e7c1213a6b1748b3489101b42702eaecfe1f801226954939c8d7f652a",
+    "default_strength": 0.7
+  }
+}

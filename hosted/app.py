@@ -247,9 +247,12 @@ class Gateway:
                         health = json.load(response)
                     online = health.get("status") == "accepting" and health.get("models", {}).get(self.model, {}).get("enabled") is True
                     self.images.online = health.get("status") == "accepting" and health.get("models", {}).get("flux", {}).get("enabled") is True
+                    self.images.available_loras = {a["id"] for a in health.get("loras", [])
+                                                   if isinstance(a, dict) and a.get("available") is True and isinstance(a.get("id"), str)}
                 self.health = {"online": bool(online), "message": "Model online" if online else "Model paused"}
             except Exception:
                 self.images.online = False
+                self.images.available_loras = set()
                 self.health = {"online": False, "message": "Model offline · saved conversations and map remain available"}
             self.stopping.wait(15)
 

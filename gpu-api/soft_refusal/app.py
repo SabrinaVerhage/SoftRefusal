@@ -17,6 +17,7 @@ from .queue import GPUQueue, ProcessBackend
 from .schemas import ChatRequest, ImageRequest
 from .store import Store
 from .progress import read_progress
+from .loras import available_adapters
 
 
 class SingleInstance:
@@ -125,6 +126,7 @@ def create_app(settings=None, backend=None):
                 "models": {k: {**v, "enabled": k != "hermes" or settings.hermes_enabled}
                            for k, v in MODELS.items()},
                 "last_metrics": queue.last_metrics,
+                "loras": available_adapters(),
                 "gpu_validation": "requires_recorded_live_rehearsal"}
 
     def owned(job_id, principal):
@@ -143,7 +145,12 @@ def create_app(settings=None, backend=None):
                 "result_url": f"/v1/jobs/{record['id']}/result"}
 
     def submit(request, principal, kind, body):
-        job_id = app.state.queue.submit(principal, kind, body.model_dump(), request.headers.get("idempotency-key"))
+        payload = body.model_dump()
+        if kind == "image" and payload.get("lora") == "none":
+            # Preserve the pre-LoRA request hash for retries of original jobs.
+            payload.pop("lora")
+            payload.pop("lora_strength")
+        job_id = app.state.queue.submit(principal, kind, payload, request.headers.get("idempotency-key"))
         return job_id
 
     @app.post("/v1/chat/jobs", status_code=202)

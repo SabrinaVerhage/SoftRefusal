@@ -8,6 +8,7 @@
     $('detail-image').alt = item.prompt;
     $('detail-prompt').textContent = item.prompt;
     $('detail-settings').textContent = `${item.width} × ${item.height} · Seed ${item.seed} · FLUX.2 klein 4B`;
+    $('detail-settings').textContent += item.lora ? ` · ${item.lora.name} · Strength ${item.lora.strength}` : ' · Original model';
     $('download').href = item.image_url;
     $('download').download = `soft-refusal-${item.id}.png`;
     $('detail').showModal();
