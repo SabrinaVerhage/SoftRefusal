@@ -40,7 +40,7 @@
       nextOffset = result.next_offset;
       $('empty').hidden = seen.size !== 0;
       $('more').hidden = nextOffset === null;
-      $('gallery-status').textContent = seen.size ? `${seen.size} ${seen.size === 1 ? 'image' : 'images'} shown · Newest first` : 'Ready for your imagination.';
+      $('gallery-status').textContent = seen.size ? `${seen.size} ${seen.size === 1 ? 'image' : 'images'} in view` : 'Ready for your imagination.';
     } catch (error) { $('gallery-status').textContent = error.message; }
     finally { loading = false; $('refresh').disabled = false; $('more').disabled = false; }
   }
