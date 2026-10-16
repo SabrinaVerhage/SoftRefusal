@@ -17,11 +17,12 @@ native model templates, one resident model and the shared serial GPU queue remai
 - Separate images: https://softrefusal.sabrinaverhage.com/images/ serves FLUX.2 klein
   4B through server-side authenticated jobs. Private PNG copies survive GPU shutdown.
   Queue position/progress, completed images, no-image outcomes and technical errors are distinct.
-- LoRA selector is deployed; body-shape-v1 remains unavailable. Browser security
-  blocked the adapter download; an existing local copy was requested. No adapter,
-  PEFT dependency or LoRA GPU source has been installed on RunPod. Local prepared
-  support passed synthetic checks only. See LORAS.md before continuing; the
-  adapter's 4B-base versus running distilled4B compatibility remains unverified.
+- LoRA selector and body-shape-v1 are installed and enabled. User-provided local
+  safetensors matched the pinned SHA256; PEFT0.18.1 installed without dependency
+  upgrades. All200 tensors verified against the running distilled4B checkpoint.
+  Neutral clothed portrait original/LoRA/original test passed, with exact original
+  PNG restoration. See LORAS.md for naming normalization and restart flags.
+  Current API PID16339, log runtime/api-lora-20261016.log; recheck before acting.
 - VPS private connection now points to https://movffvxo1jho2z-8000.proxy.runpod.net.
   Original application token unchanged, private pre-change connection backup retained.
 - Hermes data and map: `/var/lib/softrefusal/models/hermes`. Existing Gemma recordings,

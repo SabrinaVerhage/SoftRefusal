@@ -77,7 +77,7 @@ def setup(tmp_path, **overrides):
     auth.write_text(json.dumps([{"subject": k, "sha256": hashlib.sha256(v.encode()).hexdigest(),
                                 "admin": k == "operator"} for k, v in TOKENS.items()]))
     values = dict(data=tmp_path / "runtime", auth_file=auth, accept_requests=True,
-                  hermes_enabled=True, job_timeout=2, idle_unload=10)
+                  hermes_enabled=True, job_timeout=2, idle_unload=10, web_root="")
     values.update(overrides)
     return Settings(**values)
 

@@ -13,25 +13,38 @@ GPU server loads its local file for that image and unloads it afterward.
 - SHA256: `db64592e7c1213a6b1748b3489101b42702eaecfe1f801226954939c8d7f652a`.
 - Catalog reports **Flux.2 Klein 4B-base**. The running checkpoint is the
   distilled **FLUX.2-klein-4B**. Matching family and size is promising, but does
-  not prove compatibility or good results. An actual load and portrait test are
-  still required; do not mark it verified based on the name alone.
+  not prove compatibility or good results. The 16 October live test verified
+  all 200 tensors against this exact running checkpoint and generated a clothed
+  portrait successfully. This is a smoke test, not a general quality evaluation.
 - Scope: non-explicit portraits of fully clothed adults. No trigger phrase or
   optimal strength has been confirmed. The initial 0.7 is a trial setting.
 
 ## Current state, 16 October 2026
 
-The selector, fixed catalog, validation and adapter cleanup are implemented.
-The file download was blocked by browser security policy for Civitai's file
-host. No valid adapter file has been obtained, installed or tested. A request
-for an already-existing local copy is pending. Do not retry through another
-download mechanism to circumvent that restriction.
+Installed and enabled on the existing A40. After the browser download was blocked,
+the user supplied a locally downloaded copy. Its 48,195,840 bytes matched the
+published SHA256 above. PEFT 0.18.1 was installed with no dependency upgrades;
+`pip check` passed. The six changed GPU source/catalog files are deployed.
 
-The GPU runtime currently lacks PEFT. `requirements-lora.txt` pins the optional
-dependency, but it has not been installed or tested on this Pod. GPU source
-changes remain local until installation can be completed. The website may show
-the adapter as unavailable; the original model continues to work.
+This file exports bare PEFT keys ending in `.lora_A.default.weight` and
+`.lora_B.default.weight`. The pipeline expects a `transformer.` prefix and no
+saved adapter name. The loader now normalizes those names in memory, checks every
+target's dimensions, then compares all loaded tensors against the source. It
+does not alter the downloaded file or silently accept ignored weights.
 
-## Installation sequence once an accessible file is available
+The private test used a fully clothed adult man, seed 1729, 512x768, four steps,
+strength 0.7. Original → LoRA → original succeeded. The LoRA changed the image;
+the two original images had identical PNG hashes. No adapter modules remained
+after each request. Images were visually reviewed before public enablement.
+31 synthetic API/adapter tests passed on the Pod. The base remains BF16.
+
+The running API environment has `SOFT_REFUSAL_ENABLE_LORAS=1`. Include this flag
+when restarting the service; its safe default remains disabled. The standard
+`SOFT_REFUSAL_ACCEPT_REQUESTS=1`, Hermes flag and existing bind/data/auth settings
+must also be preserved. Do not restart or extend paid compute without checking
+the current authorized session in DEPLOYMENT_STATUS.md.
+
+## Installation sequence used
 
 1. Verify the version, intended model and publisher's usage terms. Hash the
    local file and compare the complete SHA256 above. A matching hash verifies
