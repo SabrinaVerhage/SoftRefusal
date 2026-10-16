@@ -54,6 +54,9 @@ class ImageJobs:
         if not owner:
             raise HTTPException(401, "Enter the image testing room first.")
         prompt, key = body.get("prompt"), body.get("request_key")
+        shared = body.get("share_gallery", False)
+        if type(shared) is not bool:
+            raise HTTPException(400, "Choose whether to share this image in the gallery.")
         width, height, seed = (body.get(k, d) for k, d in (("width", 512), ("height", 512), ("seed", 42)))
         if not isinstance(prompt, str) or not 1 <= len(prompt.strip()) <= 4000:
             raise HTTPException(400, "Write a prompt of 1–4,000 characters.")
@@ -68,7 +71,7 @@ class ImageJobs:
         with g.lock:
             old = g.db.execute("SELECT * FROM jobs WHERE owner=? AND request_key=?", (owner, key)).fetchone()
             if old:
-                if old["kind"] != "image" or old["payload"] != payload:
+                if old["kind"] != "image" or old["payload"] != payload or bool(old["shared"]) != shared:
                     raise HTTPException(409, "Request key was already used for a different request.")
                 return old["id"]
             if not g.accepting or not self.online:
@@ -84,8 +87,8 @@ class ImageJobs:
             g.limit("send:" + owner, 6)
             g.limit("ip:" + hashlib.sha256(ip.encode()).hexdigest(), 30)
             jid = secrets.token_hex(16)
-            g.db.execute("INSERT INTO jobs(id,owner,conversation,prompt,status,created,request_key,kind,payload) VALUES (?,?,'',?,'queued',?,?,'image',?)",
-                         (jid, owner, prompt.strip(), time.time(), key, payload))
+            g.db.execute("INSERT INTO jobs(id,owner,conversation,prompt,status,created,request_key,kind,payload,shared) VALUES (?,?,'',?,'queued',?,?,'image',?,?)",
+                         (jid, owner, prompt.strip(), time.time(), key, payload, int(shared)))
             g.db.commit()
             g.wake.set()
             return jid
@@ -97,6 +100,7 @@ class ImageJobs:
             for row in g.db.execute("SELECT * FROM jobs WHERE owner=? AND kind='image' ORDER BY created DESC LIMIT 20", (owner,)):
                 item = {k: row[k] for k in ("id", "prompt", "status", "error")}
                 item["settings"] = json.loads(row["payload"])
+                item["shared"] = bool(row["shared"])
                 if row["status"] == "queued":
                     item["position"] = g.db.execute("SELECT count(*) FROM jobs WHERE status IN ('queued','running') AND created<=?", (row["created"],)).fetchone()[0]
                 item.update(self.progress.get(row["id"], {}))
@@ -106,6 +110,31 @@ class ImageJobs:
             active = bool(g.db.execute("SELECT 1 FROM jobs WHERE owner=? AND status IN ('queued','running')", (owner,)).fetchone())
             return {"signed_in": bool(owner), "online": self.online, "busy": active, "jobs": jobs,
                     "model": "FLUX.2 klein 4B", "precision": "bfloat16", "steps": 4}
+
+    def gallery(self, offset=0):
+        if not 0 <= offset <= 10000:
+            raise HTTPException(400, "Invalid gallery page.")
+        with self.g.lock:
+            rows = self.g.db.execute(
+                "SELECT id,prompt,payload,created FROM jobs WHERE kind='image' AND shared=1 AND status='complete' ORDER BY created DESC,id DESC LIMIT 25 OFFSET ?",
+                (offset,)).fetchall()
+        images = []
+        for row in rows[:24]:
+            settings = json.loads(row["payload"])
+            images.append({"id": row["id"], "prompt": row["prompt"], "created": row["created"],
+                           "width": settings["width"], "height": settings["height"], "seed": settings["seed"],
+                           "image_url": f"/api/gallery/{row['id']}/image"})
+        return {"images": images, "next_offset": offset + 24 if len(rows) > 24 else None}
+
+    def public_image(self, jid):
+        with self.g.lock:
+            row = self.g.db.execute("SELECT id FROM jobs WHERE id=? AND kind='image' AND shared=1 AND status='complete'", (jid,)).fetchone()
+        if not row:
+            raise HTTPException(404, "Image not found.")
+        path = self.g.directory / "images" / (row["id"] + ".png")
+        if not path.is_file():
+            raise HTTPException(404, "Image not found.")
+        return path
 
     def run(self, row):
         g, jid = self.g, row["id"]

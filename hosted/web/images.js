@@ -26,6 +26,7 @@
         const prompt=document.createElement('p');prompt.textContent=job.prompt;
         const settings=document.createElement('p');settings.className='fine';settings.textContent=`${job.settings.width} × ${job.settings.height} · Seed ${job.settings.seed} · 4 steps · FLUX.2 klein 4B · BF16`;
         card.append(status,prompt,settings);
+        if(job.shared && job.status==='complete'){const gallery=document.createElement('a');gallery.href='/gallery/';gallery.textContent='View in the image gallery ↗';card.append(gallery);}
         if(job.error){const note=document.createElement('p');note.className='error';note.textContent=job.error;card.append(note);}
         if(job.result_url){const img=document.createElement('img');img.alt=job.prompt;img.src=job.result_url;img.loading='lazy';img.onerror=()=>{const note=document.createElement('p');note.textContent='The saved image could not be loaded. Reload to retry.';img.replaceWith(note);};const download=document.createElement('a');download.href=job.result_url;download.download=`soft-refusal-${job.id}.png`;download.textContent='Download PNG ↧';card.append(img,download);}
         return card;
@@ -40,7 +41,7 @@
   $('start').onclick=async()=>{posting=true;controls();error('');try{await api('/api/images/session',{consent:true});await refresh();$('prompt').focus();}catch(e){error(e.message);}finally{posting=false;controls();}};
   $('image-form').onsubmit=async event=>{
     event.preventDefault();if(posting || state.busy || !state.online)return;
-    const body={prompt:$('prompt').value.trim(),width:Number($('width').value),height:Number($('height').value),seed:Number($('seed').value)};
+    const body={prompt:$('prompt').value.trim(),width:Number($('width').value),height:Number($('height').value),seed:Number($('seed').value),share_gallery:$('share-gallery').checked};
     if(!pending || JSON.stringify(pending.body)!==JSON.stringify(body))pending={body,key:crypto.randomUUID()};
     sessionStorage.setItem('softrefusal.image-pending',JSON.stringify(pending));posting=true;controls();error('');
     try{await api('/api/images/jobs',{...body,request_key:pending.key});pending=null;sessionStorage.removeItem('softrefusal.image-pending');await refresh();}catch(e){error(e.message);}finally{posting=false;controls();}

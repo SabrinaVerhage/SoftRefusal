@@ -63,9 +63,10 @@ class Gateway:
           CREATE TABLE IF NOT EXISTS admission(bucket TEXT NOT NULL, created REAL NOT NULL);
         """)
         columns = {r[1] for r in self.db.execute("PRAGMA table_info(jobs)")}
-        for name, definition in {"kind": "TEXT NOT NULL DEFAULT 'chat'", "payload": "TEXT", "upstream_id": "TEXT"}.items():
+        for name, definition in {"kind": "TEXT NOT NULL DEFAULT 'chat'", "payload": "TEXT", "upstream_id": "TEXT", "shared": "INTEGER NOT NULL DEFAULT 0"}.items():
             if name not in columns:
                 self.db.execute(f"ALTER TABLE jobs ADD COLUMN {name} {definition}")
+        self.db.execute("CREATE INDEX IF NOT EXISTS jobs_gallery ON jobs(kind, shared, status, created DESC)")
         self.db.execute("UPDATE jobs SET status='interrupted', error='The server restarted. Your saved replies are safe; send this message again.' WHERE status IN ('queued','running')")
         self.db.commit()
         factory = adapter_factory or (lambda c: RemoteAdapter(c, load_connection(self.connection_file)))
@@ -400,6 +401,22 @@ def create_app(gateway=None, origin=None, secure=True):
     def image_page():
         return FileResponse(ROOT / "hosted/web/images.html")
 
+    @app.get("/api/gallery")
+    def gallery_images(offset: int = 0):
+        return gateway.images.gallery(offset)
+
+    @app.get("/api/gallery/{jid}/image")
+    def gallery_image(jid: str):
+        return FileResponse(gateway.images.public_image(jid), media_type="image/png")
+
+    @app.get("/gallery/")
+    def gallery_page():
+        return FileResponse(ROOT / "hosted/web/gallery.html")
+
+    @app.get("/gallery")
+    def gallery_redirect():
+        return RedirectResponse("/gallery/", status_code=308)
+
     @app.get("/images")
     def image_redirect():
         return RedirectResponse("/images/", status_code=308)
@@ -410,7 +427,7 @@ def create_app(gateway=None, origin=None, secure=True):
 
     @app.get("/assets/{name}")
     def asset(name: str):
-        if name not in {"phone.css", "phone.js", "live.js", "images.js", "images.css", "reasoning.js"}:
+        if name not in {"phone.css", "phone.js", "live.js", "images.js", "images.css", "reasoning.js", "gallery.js", "gallery.css"}:
             raise HTTPException(404)
         return FileResponse(ROOT / "hosted/web" / name)
 

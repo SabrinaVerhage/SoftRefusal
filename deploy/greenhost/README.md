@@ -61,6 +61,17 @@ queue capacity and disk-space checks bound admission. Model loading takes time
 when switching between chat and images. Reload recovers the owner's recent jobs;
 restart interrupts pending jobs without automatically resubmitting them.
 
+### Image gallery
+
+`/gallery/` is the public image viewer, linked from the recording room and image
+room. New submissions in the image room explicitly agree to publish the image and
+prompt. Only completed jobs with that per-image consent appear in `/api/gallery`;
+the migration defaults all existing jobs to private. Old clients can still submit
+private jobs. Public image URLs serve the saved VPS PNG and never contact RunPod.
+The gallery loads 24 images at a time, with full-image viewing and PNG downloads.
+In the current Hermes setup, files live in
+`/var/lib/softrefusal/models/hermes/images`, alongside their database metadata.
+
 ### Independent weekend shutdown
 
 The existing VPS has `softrefusal-weekend-stop.timer` enabled for

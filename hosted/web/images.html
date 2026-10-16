@@ -2,23 +2,24 @@
 <html lang="en">
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#f2f0ec"><title>Soft Refusal · Image testing</title>
+  <meta name="theme-color" content="#f2f0ec"><title>Soft Refusal · Image room</title>
   <link rel="stylesheet" href="/assets/phone.css"><link rel="stylesheet" href="/assets/images.css">
 </head>
 <body><main class="room image-room">
-  <header><a class="brand" href="/">✳ <span>SOFT REFUSAL<small>IMAGE TESTING</small></span></a><a class="map-link" href="/">Chat room ↗</a></header>
+  <header><a class="brand" href="/">✳ <span>SOFT REFUSAL<small>IMAGE ROOM</small></span></a><nav><a class="map-link" href="/gallery/">Image gallery ↗</a> · <a class="map-link" href="/">Chat room ↗</a></nav></header>
   <section class="image-intro"><span class="eyebrow">FLUX.2 KLEIN 4B</span><h1>A prompt.<br><em>A possibility.</em></h1>
-    <p>Explore what the image model produces. Every result keeps its prompt, size and seed. A technical failure is shown separately from an image result.</p>
+    <p>Describe something you want to see. Create an image, then find it in the shared <a href="/gallery/">image gallery ↗</a>.</p>
     <p class="fine">Images and chat share one GPU. Requests run one at a time; switching models can take about a minute. Images do not enter the conversation map.</p>
   </section>
-  <section id="welcome" class="notice"><strong>Your image tests are saved.</strong><p>Prompts and images are stored privately by the installation host and shown only in this browser session. Please avoid personal information.</p><label><input id="consent" type="checkbox"><span>I understand and agree to save my image tests.</span></label><button id="start" class="primary" disabled>Enter image testing ↗</button></section>
+  <section id="welcome" class="notice"><strong>A shared collection of possibilities.</strong><p>Images are saved by the installation host. New images and their prompts will appear in the public gallery when you agree below. Please avoid personal information.</p><label><input id="consent" type="checkbox"><span>I understand and agree to save my images.</span></label><button id="start" class="primary" disabled>Enter the image room ↗</button></section>
   <form id="image-form" hidden>
     <label for="prompt">Image prompt</label><textarea id="prompt" rows="4" maxlength="4000" placeholder="A blue ceramic cup on a wooden table in soft daylight…" required></textarea>
     <div class="settings"><label>Width<select id="width"><option>512</option><option>768</option><option>1024</option></select></label><label>Height<select id="height"><option>512</option><option>768</option><option>1024</option></select></label><label>Seed<input id="seed" type="number" min="0" max="2147483647" step="1" value="42" required></label></div>
-    <div class="compose-actions"><span class="fine">Original BF16 · 4 steps</span><button id="generate" class="primary" disabled>Generate image ↗</button></div>
+    <label class="share-notice"><input id="share-gallery" type="checkbox" required><span>I agree to show this image and its prompt in the public gallery.</span></label>
+    <div class="compose-actions"><span class="fine">Saved here · Shared in the gallery</span><button id="generate" class="primary" disabled>Generate image ↗</button></div>
     <p id="queue-note" class="fine" role="status"></p>
   </form>
   <p id="error" class="error" role="alert" hidden></p>
-  <div class="results-heading"><h2>Your image tests</h2><span id="connection" class="connection" role="status">Connecting…</span></div>
+  <div class="results-heading"><h2>Your images</h2><span id="connection" class="connection" role="status">Connecting…</span></div>
   <section id="results" aria-label="Image test results"></section>
 </main><script src="/assets/images.js"></script></body></html>
