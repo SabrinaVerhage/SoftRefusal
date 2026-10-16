@@ -3,6 +3,9 @@
   const $ = id => document.getElementById(id), M = CloudMath, { TAU, clamp } = M;
   const canvas = $('cloud'), ctx = canvas.getContext('2d', { alpha: false });
   const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  // The public map shows threads and reasoning; ?tools brings back the research controls.
+  const tools = new URLSearchParams(location.search).has('tools');
+  document.body.classList.toggle('tools', tools);
   const concept = M.makeConcept();
   let data = concept, selected, hovered, neighbors = [], projected = [], drawnPoints = [], segments = [];
   let colorMode = 'topic', autoOrbit = false, showNeighbors = false, tour = null, transition = null, morph = null;
@@ -11,7 +14,7 @@
   const camera = { yaw: -0.18, pitch: 0.38, zoom: 1, target: { x: 0, y: 0, z: 0 }, pan: { x: 0, y: 0 } };
   const filters = new Set(['answered', 'redirected', 'refused', 'unlabeled']);
   const pointers = new Map();
-  let drag = null, pinch = null;
+  let drag = null, pinch = null, hoveredThread = null;
   let replay = { path: [], index: 0, playing: false, reveal: false, next: 0 };
   const colors = { answered: [234, 110, 165], redirected: [231, 151, 101], refused: [157, 119, 198], unclear: [142, 130, 125], unlabeled: [142, 130, 125] };
   const topicColors = { consent: '#f3cfac', intimacy: '#efadbe', desire: '#eeadd1', 'erotic fiction': '#c9a7df', relationships: '#edb5ba', 'sexual health': '#f1c4a6', unclassified: '#d7ccc0' };
@@ -42,7 +45,8 @@
     const box = canvas.getBoundingClientRect(); width = box.width; height = box.height;
     dpr = Math.min(devicePixelRatio || 1, 2); canvas.width = Math.round(width * dpr); canvas.height = Math.round(height * dpr);
     const mobile = width <= 760, usableWidth = mobile ? width - 22 : width - (width < 1150 ? 380 : 470);
-    viewport = { cx: mobile ? width * 0.5 : width * 0.51, cy: mobile ? height * (height < 700 ? 0.47 : 0.4) : height * 0.445, scale: Math.min(usableWidth / 5.9, height * (mobile ? 0.081 : 0.127)) };
+    const mobileY = tools ? (height < 700 ? 0.47 : 0.4) : 0.57;
+    viewport = { cx: mobile ? width * 0.5 : width * 0.51, cy: mobile ? height * mobileY : height * 0.445, scale: Math.min(usableWidth / 5.9, height * (mobile ? (tools ? 0.081 : 0.07) : 0.127)) };
     dirty = true;
   }
   function project(p) { return M.project(p, camera, viewport); }
@@ -150,6 +154,7 @@
   }
   function pathOpacity(p) {
     if (!recorded() || !selected) return 1;
+    if (!tools) return p.conversation_id === selected.conversation_id ? 1 : 0.22;
     if ($('all-conversations').checked) return 1;
     if (p.conversation_id !== selected.conversation_id) return 0.16;
     return replay.reveal && p.turn_id > selected.turn_id ? 0.18 : 1;
@@ -161,8 +166,16 @@
       if (!filters.has(a.outcome) || !filters.has(b.outcome)) continue;
       const active = a.conversation_id === selected?.conversation_id;
       ctx.globalAlpha = Math.min(pathOpacity(a), pathOpacity(b));
-      ctx.strokeStyle = rgba(a.color, 1); ctx.lineWidth = active ? 2.3 : $('all-conversations').checked ? 1.8 : 1;
-      ctx.setLineDash(active || $('all-conversations').checked ? [] : [3, 5]); curve([a, b]); ctx.stroke();
+      if (!tools) {
+        // Every conversation reads as one continuous thread: a paper halo lifts it off the contours.
+        const lineWidth = active ? 3.6 : a.conversation_id === hoveredThread ? 3.2 : 2.4;
+        ctx.setLineDash([]); ctx.lineCap = 'round'; curve([a, b]);
+        ctx.strokeStyle = 'rgba(253,250,245,0.9)'; ctx.lineWidth = lineWidth + 3.5; ctx.stroke();
+        ctx.strokeStyle = rgba(a.color, 1); ctx.lineWidth = lineWidth; ctx.stroke();
+      } else {
+        ctx.strokeStyle = rgba(a.color, 1); ctx.lineWidth = active ? 2.3 : $('all-conversations').checked ? 1.8 : 1;
+        ctx.setLineDash(active || $('all-conversations').checked ? [] : [3, 5]); curve([a, b]); ctx.stroke();
+      }
       const p = project(a), q = project(b), length = Math.hypot(q.x - p.x, q.y - p.y);
       if (active && length > 24) {
         const angle = Math.atan2(q.y - p.y, q.x - p.x), x = p.x + (q.x - p.x) * 0.64, y = p.y + (q.y - p.y) * 0.64;
@@ -221,7 +234,7 @@
     $('point-number').textContent = recorded() ? `TURN ${p.turn_id + 1} / ${turns}` : `PROMPT / ${p.point_id.replace(/^field-|^sample-/, '').toUpperCase()}`;
     $('point-topic').textContent = p.topic.toUpperCase(); $('point-topic').style.background = recorded() ? rgba(p.color, 0.3) : topicColors[p.topic] || '#dfd1dc';
     $('inspector').classList.toggle('recorded', recorded()); $('response-block').hidden = !recorded();
-    $('point-response').textContent = recorded() ? p.response || '(The model replied with no text.)' : ''; $('point-response-note').textContent = recorded() && p.hit_token_limit ? 'REPLY REACHED ITS LENGTH LIMIT' : '';
+    $('point-response').textContent = recorded() ? splitThinking(p.response).answer || '(The model replied with no text.)' : ''; $('point-response-note').textContent = recorded() && p.hit_token_limit ? 'REPLY REACHED ITS LENGTH LIMIT' : '';
     $('response-heading').textContent = data.synthetic ? 'ILLUSTRATIVE RESPONSE' : 'MODEL REPLIED';
     $('point-prompt').textContent = p.prompt; $('point-outcome').textContent = p.outcome[0].toUpperCase() + p.outcome.slice(1) + (p.label_source === 'model_judge' ? ' · Auto-tagged' : p.label_source === 'human' ? ' · Human-labelled' : ''); $('status-dot').className = `dot ${p.outcome}`;
     $('point-outcome').title = p.label_reason || '';
@@ -235,6 +248,7 @@
       $('inspector-note').textContent = 'Art-directed example of conversation replay. Paths, responses and outcomes are invented to demonstrate the interface. No model was queried; these are not measured trajectories.';
     }
     if (recorded() && !data.synthetic && p.label_source === 'model_judge') $('inspector-note').textContent += ` Auto-tagged by Gemma; this judgment may be wrong.${p.label_reason ? ' ' + p.label_reason : ''}`;
+    if (!tools) renderThread(p);
     if (recorded()) {
       if (replay.path[0]?.conversation_id !== p.conversation_id) {
         replay = { path: M.conversationPath(data.points, p.conversation_id), index: 0, playing: false, reveal: false, next: 0 };
@@ -242,6 +256,57 @@
       replay.index = replay.path.indexOf(p); updateReplay();
     }
     dirty = true;
+  }
+  // Thinking models write <think>…</think> before their answer; the recording keeps the raw text.
+  function splitThinking(text) {
+    text = text || '';
+    const start = text.indexOf('<think>'), end = text.indexOf('</think>');
+    if (start < 0 && end < 0) return { thinking: null, answer: text };
+    const from = start < 0 ? 0 : start + 7;
+    return { thinking: text.slice(from, end < 0 ? undefined : end).trim(), answer: end < 0 ? '' : text.slice(end + 8).trim() };
+  }
+  function nearestThread(x, y) {
+    let best = (width <= 760 ? 16 : 9) ** 2, id = null;
+    for (const [a, b] of segments) {
+      if (!filters.has(a.outcome) || !filters.has(b.outcome)) continue;
+      const p = project(a), q = project(b), dx = q.x - p.x, dy = q.y - p.y, t = clamp(((x - p.x) * dx + (y - p.y) * dy) / (dx * dx + dy * dy || 1), 0, 1);
+      const distance = (p.x + t * dx - x) ** 2 + (p.y + t * dy - y) ** 2;
+      if (distance < best) { best = distance; id = a.conversation_id; }
+    }
+    return id;
+  }
+  // The moment shown first: the refusal closest to the core, else the turn closest to it.
+  function threadMoment(id) {
+    const path = M.conversationPath(data.points, id), score = p => p.core_score ?? p.turn_id;
+    const pick = list => list.reduce((a, b) => score(b) > score(a) ? b : a);
+    const refused = path.filter(p => p.outcome === 'refused'), redirected = path.filter(p => p.outcome === 'redirected');
+    return pick(refused.length ? refused : redirected.length ? redirected : path);
+  }
+  function clearThread() {
+    selected = null; $('thread').hidden = true; dirty = true;
+  }
+  function renderThread(p) {
+    const card = $('thread'), path = M.conversationPath(data.points, p.conversation_id), moment = threadMoment(p.conversation_id);
+    card.hidden = !recorded();
+    if (card.hidden) return;
+    $('legend').classList.remove('mobile-open'); $('legend-mobile').setAttribute('aria-expanded', 'false');
+    $('thread-swatch').style.background = rgba(p.color, 1);
+    $('thread-number').textContent = `CONVERSATION ${String(p.conversation_number).padStart(2, '0')} · ${path.length} ${path.length === 1 ? 'MESSAGE' : 'MESSAGES'}`;
+    $('thread-demo').textContent = data.synthetic ? 'ILLUSTRATIVE' : '';
+    $('thread-steps').replaceChildren(...path.map(q => {
+      const item = document.createElement('li'), button = document.createElement('button'), dot = document.createElement('i');
+      dot.className = `dot ${q.outcome}`; button.append(dot, document.createTextNode(String(q.turn_id + 1)));
+      button.className = (q === p ? 'active' : '') + (q === moment ? ' moment-step' : ''); button.setAttribute('aria-pressed', String(q === p));
+      button.setAttribute('aria-label', `Message ${q.turn_id + 1}: ${q.outcome}${q === moment ? ', closest to the core' : ''}`);
+      button.onclick = () => selectPoint(q); item.append(button); return item;
+    }));
+    $('moment-heading').textContent = p === moment && p.outcome === 'refused' ? `REFUSAL MOMENT · MESSAGE ${p.turn_id + 1}` : p === moment ? `CLOSEST TO THE CORE · MESSAGE ${p.turn_id + 1}` : `MESSAGE ${p.turn_id + 1}`;
+    $('moment-dot').className = `dot ${p.outcome}`;
+    $('moment-outcome').textContent = (p.outcome === 'unlabeled' ? 'Not labelled yet' : `AI ${p.outcome}`) + (p.label_source === 'model_judge' ? ' · auto-tagged' : '');
+    const thinking = splitThinking(p.response).thinking;
+    $('moment-reasoning').textContent = thinking || 'No reasoning was recorded for this message. Conversations from before the AI wrote down its thinking only show where they went on the map.';
+    $('moment-reasoning').classList.toggle('empty', !thinking);
+    $('thread-note').hidden = !thinking;
   }
   function makeLabels() {
     $('map-labels').replaceChildren(); labelNodes.length = 0;
@@ -335,7 +400,8 @@
     $('point-count').textContent = `${data.points.length.toLocaleString('en-US')} POINTS / ${data.kind === 'concept' ? 'SYNTHETIC FIELD' : data.kind === 'umap' ? '3D UMAP · SYNTHETIC VECTORS' : 'IMPORTED COORDINATES'}`;
     $('search').value = ''; $('search-results').hidden = true; hovered = null; $('hover-label').hidden = true;
     recordingText(); showNeighbors = false; $('neighbors').setAttribute('aria-pressed', 'false'); $('neighbors').lastElementChild.textContent = '＋'; recolor(); makeLabels(); reset(false);
-    selectPoint(data.kind === 'semantic' ? data.points.reduce((a, b) => b.core_score > a.core_score ? b : a) : data.kind === 'concept' ? data.points.find(p => p.topic === 'intimacy' && p.prompt === 'How do I talk about desire without feeling ashamed?' && p.z < -0.3) || data.points[142] : data.points[0]);
+    if (!tools) clearThread();
+    else selectPoint(data.kind === 'semantic' ? data.points.reduce((a, b) => b.core_score > a.core_score ? b : a) : data.kind === 'concept' ? data.points.find(p => p.topic === 'intimacy' && p.prompt === 'How do I talk about desire without feeling ashamed?' && p.z < -0.3) || data.points[142] : data.points[0]);
     $('inspector').classList.remove('mobile-open'); $('inspector-mobile').setAttribute('aria-expanded', 'false');
   }
   function nearestScreen(x, y) {
@@ -347,10 +413,12 @@
     return candidate;
   }
   function updateHover(x, y) {
-    const p = nearestScreen(x, y); if (p === hovered) return; hovered = p; dirty = true;
+    const p = nearestScreen(x, y), thread = !tools && recorded() ? p?.conversation_id || nearestThread(x, y) : null;
+    if (thread !== hoveredThread) { hoveredThread = thread; dirty = true; canvas.style.cursor = thread ? 'pointer' : 'grab'; }
+    if (p === hovered) return; hovered = p; dirty = true;
     $('hover-label').hidden = !p;
     if (p) { $('hover-label').textContent = recorded() ? `${p.topic} · turn ${p.turn_id + 1}${data.kind === 'semantic' ? ` · ${p.outcome}` : ''}` : `${p.topic} / ${p.outcome}`; $('hover-label').style.left = `${clamp(x + 15, 10, width - 260)}px`; $('hover-label').style.top = `${y - 35}px`; }
-    canvas.style.cursor = p ? 'pointer' : 'grab';
+    canvas.style.cursor = p || hoveredThread ? 'pointer' : 'grab';
   }
   function updateSearch() {
     const query = $('search').value.toLowerCase().trim(), root = $('search-results'); root.replaceChildren(); root.hidden = !query; if (!query) return;
@@ -413,7 +481,10 @@
     dirty = true;
   });
   function pointerEnd(e) {
-    if (drag && !drag.moved && pointers.size === 1 && e.type === 'pointerup') { const p = nearestScreen(e.offsetX, e.offsetY); if (p) selectPoint(p); }
+    if (drag && !drag.moved && pointers.size === 1 && e.type === 'pointerup') {
+      const p = nearestScreen(e.offsetX, e.offsetY), thread = !p && !tools && recorded() ? nearestThread(e.offsetX, e.offsetY) : null;
+      if (p) selectPoint(p); else if (thread) selectPoint(threadMoment(thread)); else if (!tools) clearThread();
+    }
     pointers.delete(e.pointerId); pinch = null;
     if (!pointers.size) drag = null; else { const p = [...pointers.values()][0]; drag = { x: p.x, y: p.y, startX: p.x, startY: p.y, moved: true, pan: false }; }
   }
@@ -434,6 +505,8 @@
     tour = { path, index: -1, next: 0 }; $('tour').setAttribute('aria-pressed', 'true');
   };
   $('neighbors').onclick = () => { showNeighbors = !showNeighbors; $('neighbors').setAttribute('aria-pressed', String(showNeighbors)); $('neighbors').lastElementChild.textContent = showNeighbors ? '−' : '＋'; dirty = true; };
+  $('close-thread').onclick = clearThread;
+  $('legend-mobile').onclick = () => { const open = $('legend').classList.toggle('mobile-open'); $('legend-mobile').setAttribute('aria-expanded', String(open)); if (open) clearThread(); };
   $('close-inspector').onclick = () => { $('inspector').hidden = true; $('inspector').classList.remove('mobile-open'); $('inspector-mobile').setAttribute('aria-expanded', 'false'); };
   $('layers-mobile').onclick = () => { const open = $('layers').classList.toggle('mobile-open'); $('layers-mobile').setAttribute('aria-expanded', String(open)); if (open) { $('inspector').classList.remove('mobile-open'); $('inspector-mobile').setAttribute('aria-expanded', 'false'); } };
   $('inspector-mobile').onclick = () => { const open = !$('inspector').classList.contains('mobile-open'); $('inspector').hidden = false; $('inspector').classList.toggle('mobile-open', open); $('inspector-mobile').setAttribute('aria-expanded', String(open)); if (open) { $('layers').classList.remove('mobile-open'); $('layers-mobile').setAttribute('aria-expanded', 'false'); } };
@@ -466,9 +539,9 @@
   };
   $('about-open').onclick = () => $('about').showModal(); $('about-close').onclick = () => $('about').close(); $('about').addEventListener('click', e => { if (e.target === $('about')) { const r = $('about').getBoundingClientRect(); if (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) $('about').close(); } });
   document.addEventListener('keydown', e => {
-    if (e.key === 'Escape') { stopMotion(); $('search-results').hidden = true; dirty = true; return; }
+    if (e.key === 'Escape') { stopMotion(); $('search-results').hidden = true; if (!tools) clearThread(); dirty = true; return; }
     if ($('about').open || /INPUT|TEXTAREA|SELECT|BUTTON/.test(document.activeElement.tagName)) return;
-    if (e.key === '/') { e.preventDefault(); $('search').focus(); return; }
+    if (e.key === '/' && tools) { e.preventDefault(); $('search').focus(); return; }
     if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.key)) {
       e.preventDefault(); stopMotion(); if (e.key === 'ArrowLeft') camera.yaw -= 0.07; if (e.key === 'ArrowRight') camera.yaw += 0.07; if (e.key === 'ArrowUp') camera.pitch -= 0.07; if (e.key === 'ArrowDown') camera.pitch += 0.07; camera.pitch = clamp(camera.pitch, -1.5, 1.5); setViewButtons('3d'); dirty = true;
     } else if (e.key === '+' || e.key === '=') { e.preventDefault(); zoom(1.15); } else if (e.key === '-') { e.preventDefault(); zoom(1 / 1.15); } else if (e.key.toLowerCase() === 'r') reset(); else if (e.key.toLowerCase() === 'f') focusPoint();
@@ -506,6 +579,7 @@
   if (window.PATH_STUDY && new URLSearchParams(location.search).has('study')) { $('dataset').value = 'study'; loadDataset(semanticDataset(window.PATH_STUDY)); }
   else if (donut) { $('dataset').value = 'semantic'; loadDataset(semanticDataset()); }
   else if (window.RECORDINGS) { $('dataset').value = 'recordings'; loadDataset(recordingsDataset()); message(`No donut yet: ${window.RECORDINGS.semantic?.unavailable || 'rebuild the map with Update Map from Recordings.'}`, 12000); }
+  else if (!tools && window.PATH_STUDY) { $('dataset').value = 'study'; loadDataset(semanticDataset(window.PATH_STUDY)); }
   else loadDataset(concept);
   window.addEventListener('softrefusal:recordings', event => {
     const source = event.detail;
@@ -528,7 +602,7 @@
       if (!firstLive) Object.assign(camera, previousCamera);
       const conversation = new URLSearchParams(location.search).get('conversation');
       const point = data.points.find(p => p.point_id === selectedId) || data.points.find(p => p.conversation_id === conversation);
-      if (point) selectPoint(point);
+      if (point) selectPoint(!tools && !selectedId ? threadMoment(point.conversation_id) : point); else if (!tools) clearThread();
       dirty = true;
     }
   });

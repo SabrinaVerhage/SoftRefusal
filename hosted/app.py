@@ -57,7 +57,9 @@ class Gateway:
         """)
         self.db.execute("UPDATE jobs SET status='interrupted', error='The server restarted. Your saved replies are safe; send this message again.' WHERE status IN ('queued','running')")
         self.db.commit()
-        config = read_json(ROOT / "recorder/configs/gemma3-12b-remote.json")
+        # SOFT_REFUSAL_MODEL_CONFIG selects the served model, e.g. hermes4-14b-remote.json for visible thinking.
+        config = read_json(ROOT / "recorder/configs" / os.getenv("SOFT_REFUSAL_MODEL_CONFIG", "gemma3-12b-remote.json"))
+        self.instruction = config.get("default_instruction", DEFAULT_INSTRUCTION)
         factory = adapter_factory or (lambda c: RemoteAdapter(c, load_connection(self.connection_file)))
         self.service = ChatService(config, self.directory / "recordings", adapter_factory=factory,
                                    auto_label=adapter_factory is None)
@@ -107,7 +109,7 @@ class Gateway:
                 self.db.execute("INSERT INTO visitors VALUES (?,?)", (owner, time.time()))
             if self.db.execute("SELECT 1 FROM jobs WHERE owner=? AND status IN ('queued','running')", (owner,)).fetchone():
                 raise HTTPException(409, "Wait for your reply or stop it before starting a new conversation.")
-            sid = self.service.create(DEFAULT_INSTRUCTION)
+            sid = self.service.create(self.instruction)
             self.db.execute("INSERT INTO conversations VALUES (?,?,?)", (sid, owner, time.time()))
             self.db.commit()
             return sid, token
@@ -187,7 +189,7 @@ class Gateway:
                 try:
                     self.db.execute("UPDATE jobs SET status='running' WHERE id=?", (row["id"],))
                     self.db.commit()
-                    self.service.submit(row["conversation"], row["prompt"], reply_limit=512)
+                    self.service.submit(row["conversation"], row["prompt"], reply_limit=self.service.config.get("max_new_tokens", 512))
                 except Exception:
                     self.db.execute("UPDATE jobs SET status='error', error=? WHERE id=?", ("Could not start this reply. Please try again.", row["id"]))
                     self.db.commit()
@@ -224,7 +226,8 @@ class Gateway:
                     req = urllib.request.Request(connection["api_url"] + "/v1/health", headers={"Authorization": "Bearer " + connection["access_code"], "User-Agent": "SoftRefusal/1"})
                     with urllib.request.urlopen(req, timeout=5) as response:
                         health = json.load(response)
-                    online = health.get("status") == "accepting" and health.get("models", {}).get("gemma", {}).get("enabled") is True
+                    model = self.service.config.get("remote_model", "gemma")
+                    online = health.get("status") == "accepting" and health.get("models", {}).get(model, {}).get("enabled") is True
                 self.health = {"online": bool(online), "message": "Model online" if online else "Model paused"}
             except Exception:
                 self.health = {"online": False, "message": "Model offline · saved conversations and map remain available"}

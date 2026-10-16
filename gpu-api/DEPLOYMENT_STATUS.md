@@ -1,3 +1,12 @@
+# Weekend update — 16 October 2026
+
+**A40 movffvxo1jho2z is RUNNING** at $0.594/hour including container disk, with the existing 150 GB volume. User approved a $36 total ceiling and shutdown Sunday 18 October 23:59 Europe/Amsterdam. Current API: https://movffvxo1jho2z-8000.proxy.runpod.net/ . Hermes 4 14B and FLUX.2 klein 4B both passed neutral live tests. One shared serial queue; original BF16. H100 and old A40s remain stopped.
+
+**The existing public website is still offline and still displays Gemma.** User wants Hermes with generated reasoning. Reconnect and deploy from the original computer with the working Greenhost SSH key; travel computer key was rejected. A cloud-chat handoff named Continue Soft Refusal weekend setup has been created. Separate image frontend remains to build. About $25 credit top-up is needed based on the last $11.01 balance.
+
+Sunday local heartbeat is active, but a Pod-local timer was NOT configured because the scoped CLI read probe returned Unauthorized. Establish reliable shutdown on the other computer. Read the 16 October deployment-log entry and the cloud handoff before acting. Earlier sections below are historical.
+
+---
 # Current RunPod deployment status
 
 ## Completed session — 15 October 2026
@@ -78,3 +87,4 @@ Prepared 2026-10-13 without paid compute. The Pod still runs v0.2.
 3. In the Pod's private Linux terminal, start from /workspace/soft-refusal using the preserved environment. For an agreed neutral rehearsal: SOFT_REFUSAL_ACCEPT_REQUESTS=1 SOFT_REFUSAL_ENABLE_HERMES=1 SOFT_REFUSAL_BIND=0.0.0.0 bash scripts/start.sh . Record the new PID/log. Do not use historical process IDs.
 4. Verify authenticated health, job recovery, text/images and switching as needed, with separate raw error/refusal representation. Keep one model resident, BF16, and discuss quantization before changing the research baseline.
 5. At session end, pause admission and drain if practical, back up SQLite, stop RunPod and verify $0.00/hr. Retain the separately billed volume unless deletion is expressly requested.
+

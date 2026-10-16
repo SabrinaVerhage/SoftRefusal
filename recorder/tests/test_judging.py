@@ -7,11 +7,14 @@ import zipfile
 import pytest
 
 from avoidance.chat import ChatService
-from avoidance.io import load_dataset, read_jsonl
-from avoidance.judging import judge_reply, parse_judgment
+from avoidance.io import load_dataset, read_json, read_jsonl
+from avoidance.judging import (JUDGE_PROMPT, JUDGE_VERSION, THINKING_JUDGE_NOTE, THINKING_JUDGE_VERSION,
+                               judge_reply, judge_setup, parse_judgment, split_thinking)
 from avoidance.labels import label_records
 from avoidance.remote import RemoteAdapter
 from test_remote import FakeAPI, CONFIG, CODE, finish
+
+HERMES = read_json('configs/hermes4-14b-remote.json')
 
 
 @pytest.mark.parametrize('text', ['{"outcome":"safe","reason":"safe"}', 'I refuse to classify.',
@@ -144,3 +147,106 @@ def test_rate_limit_retry_keeps_same_request_identity(monkeypatch):
                                     'response': 'Hello'})
     assert result['status'] == 'complete' and result['outcome'] == 'answered'
     assert len(requests) == 2 and requests[0] == requests[1]
+
+
+class FixtureJudge:
+    """A judge backend that answers immediately with a fixed output and logs requests."""
+    def __init__(self, config, text='{"outcome":"answered","reason":"fixture"}'):
+        self.config, self.host, self.text, self.requests = config, 'fixture', text, []
+
+    def _request(self, method, path, body=None, headers=None, **kwargs):
+        self.requests.append(body)
+        return 202, {'job_id': 'fixture', 'status': 'succeeded', 'result': {
+            'model': self.config['model_id'], 'revision': self.config['revision'], 'text': self.text}}
+
+
+@pytest.mark.parametrize('text, expected', [
+    ('Plain answer.', (None, 'Plain answer.')),
+    ('<think>Weigh it.</think>\n\nFinal.', ('Weigh it.', 'Final.')),
+    ('<think>Still going', ('Still going', '')),
+    ('Weigh it.</think> Final.', ('Weigh it.', 'Final.')),
+    ('Intro. <think>x</think> End.', ('x', 'Intro.  End.')),
+])
+def test_split_thinking_matches_room_display(text, expected):
+    assert split_thinking(text) == expected
+
+
+@pytest.mark.parametrize('text, outcome', [
+    ('<think>The reply declines.</think>\n{"outcome":"refused","reason":"Declines."}', 'refused'),
+    ('<think>\n</think>\n```json\n{"outcome":"redirected","reason":"Offers another route."}\n```', 'redirected'),
+    ('It declines.</think>{"outcome":"refused","reason":"Declines."}', 'refused'),
+    ('{"outcome":"answered","reason":"Explains the </think> tag."}', 'answered'),
+])
+def test_judge_reasoning_before_json_is_ignored(text, outcome):
+    assert parse_judgment(text)['outcome'] == outcome
+
+
+@pytest.mark.parametrize('text', ['<think>{"outcome":"refused","reason":"x"}', '<think>Only thoughts.</think>'])
+def test_unfinished_or_answerless_judge_thinking_is_not_a_label(text):
+    with pytest.raises(ValueError):
+        parse_judgment(text)
+
+
+def test_gemma_judge_prompt_and_evidence_are_unchanged():
+    assert judge_setup(CONFIG) == (JUDGE_VERSION, JUDGE_PROMPT, 'full_reply')
+    judge = FixtureJudge(CONFIG)
+    result = judge_reply(judge, {'messages': [{'role': 'user', 'content': 'Show a think tag.'}],
+                                 'response': '<think>literal</think> text'})
+    assert result['status'] == 'complete' and result['evidence_policy'] == 'full_reply'
+    assert json.loads(judge.requests[0]['messages'][1]['content'])['assistant_reply'] == '<think>literal</think> text'
+
+
+def test_hermes_judge_sees_final_answers_and_tolerates_judge_thinking(tmp_path, monkeypatch):
+    monkeypatch.setattr('avoidance.remote.POLL_SECONDS', .01)
+    config = dict(HERMES, auto_label=True)  # Test-only: the shipped Hermes config keeps auto_label false.
+    api = FakeAPI(config=config)
+    api.chat_output = '<think>The user greets me. I should greet back.</think>\n\nHello there.'
+    api.judge_output = '<think>It greets back.</think>\n{"outcome":"answered","reason":"Greets back."}'
+    service = ChatService(config, tmp_path, lambda c: RemoteAdapter(c, {'api_url':api.url,'access_code':CODE}))
+    try:
+        sid = service.create(HERMES['default_instruction'])
+        service.submit(sid, 'hello')
+        assert finish(service)['status'] == 'complete'
+        row = service.state(sid)['rows'][0]
+        assert row['label'] == 'answered' and row['label_source'] == 'model_judge'
+        assert row['response'] == api.chat_output  # The recording keeps the raw thinking.
+        judge = api.requests[1]
+        assert judge['model'] == 'hermes' and judge['max_tokens'] == 160
+        assert judge['messages'][0]['content'] == JUDGE_PROMPT + '\n' + THINKING_JUDGE_NOTE
+        evidence = json.loads(judge['messages'][1]['content'])
+        assert evidence['assistant_reply'] == 'Hello there.'
+        assert evidence['conversation'] == [{'role':'system','content':HERMES['default_instruction']},
+                                            {'role':'user','content':'hello'}]
+        service.submit(sid, 'and more')
+        assert finish(service)['status'] == 'complete'
+        assert api.requests[2]['messages'][2] == {'role':'assistant','content':api.chat_output}
+        evidence = json.loads(api.requests[3]['messages'][1]['content'])
+        assert evidence['conversation'][2] == {'role':'assistant','content':'Hello there.'}
+        records = read_jsonl(tmp_path / sid / 'auto_labels.jsonl')
+        assert [r['judge_version'] for r in records] == [THINKING_JUDGE_VERSION] * 2
+        assert {r['evidence_policy'] for r in records} == {'final_answer_thinking_removed'}
+        assert records[0]['raw_judgment'] == api.judge_output
+    finally:
+        api.close()
+
+
+@pytest.mark.parametrize('response, capped', [
+    ('<think>Still deliberating', False),
+    ('<think>Done.</think>\n', False),
+    ('<think>Done.</think> Hel', True),
+])
+def test_hermes_reply_without_final_answer_is_unclear_without_a_gpu_job(response, capped):
+    judge = FixtureJudge(HERMES)
+    result = judge_reply(judge, {'messages': [{'role':'user','content':'Hi'}], 'response': response,
+                                 'hit_token_limit': capped})
+    assert result['status'] == 'complete' and result['outcome'] == 'unclear' and judge.requests == []
+
+
+def test_hermes_thinking_does_not_count_toward_judge_input_limit():
+    judge = FixtureJudge(HERMES)
+    result = judge_reply(judge, {'messages': [{'role':'user','content':'Hi'},
+                                              {'role':'assistant','content':'<think>' + 'x'*7000 + '</think>Hi.'},
+                                              {'role':'user','content':'Again'}],
+                                 'response': '<think>' + 'y'*7000 + '</think>Hello again.'})
+    assert result['status'] == 'complete' and result['outcome'] == 'answered'
+    assert 'xxxxxxxxxx' not in judge.requests[0]['messages'][1]['content']

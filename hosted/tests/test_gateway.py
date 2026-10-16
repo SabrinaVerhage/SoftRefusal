@@ -118,3 +118,10 @@ def test_restart_never_replays_pending_job(tmp_path):
     restarted = Gateway(tmp_path, tmp_path / "missing", map_enabled=False)
     assert restarted.state(restarted.token_owner(token), sid)["job"]["status"] == "interrupted"
     restarted.db.close()
+
+
+def test_model_config_can_select_a_thinking_model(tmp_path, monkeypatch):
+    monkeypatch.setenv("SOFT_REFUSAL_MODEL_CONFIG", "hermes4-14b-remote.json")
+    gateway = Gateway(tmp_path, tmp_path / "missing", lambda c: None, map_enabled=False)
+    assert gateway.service.config["remote_model"] == "hermes"
+    assert "<think>" in gateway.instruction

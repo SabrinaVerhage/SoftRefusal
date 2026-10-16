@@ -12,7 +12,7 @@ const { chromium } = require('playwright');
     const errors = [];
     page.on('pageerror', error => errors.push(error.message));
     const base = process.env.MAP_TEST_URL || require('node:url').pathToFileURL(path.join(__dirname, 'index.html')).href;
-    await page.goto(new URL('?study', base).href);
+    await page.goto(new URL('?study&tools', base).href);
     await page.locator('#replay').waitFor({ state: 'visible' });
     assert.match(await page.locator('#source-summary').textContent(), /no model measurements/);
     await page.locator('#conversation-select').selectOption('study-return');

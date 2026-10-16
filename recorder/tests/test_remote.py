@@ -24,8 +24,9 @@ def vectors_for(layers):
 
 
 class FakeAPI:
-    def __init__(self, mode="ok"):
+    def __init__(self, mode="ok", config=CONFIG):
         self.mode, self.jobs, self.requests, self.cancelled = mode, {}, [], []
+        self.config, self.chat_output = config, "Hello there."
         api = self
 
         class Handler(BaseHTTPRequestHandler):
@@ -50,7 +51,7 @@ class FakeAPI:
                 if not self.authorized():
                     return
                 if self.path == "/v1/health":
-                    return self.send(200, {"status": "accepting", "models": {"gemma": {"enabled": True}}})
+                    return self.send(200, {"status": "accepting", "models": {api.config["remote_model"]: {"enabled": True}}})
                 parts = self.path.strip("/").split("/")
                 job = api.jobs[parts[2]]
                 if parts[-1] == "activations":
@@ -83,7 +84,7 @@ class FakeAPI:
     def advance(self, job):
         job["polls"] += 1
         if "record_layers" not in job["body"]:
-            job.update(status="succeeded", result={"model": CONFIG["model_id"], "revision": CONFIG["revision"],
+            job.update(status="succeeded", result={"model": self.config["model_id"], "revision": self.config["revision"],
                        "text": getattr(self, "judge_output", '{"outcome":"answered","reason":"The requested greeting was provided."}'),
                        "hit_token_limit": False})
             return self.view(job)
@@ -107,10 +108,10 @@ class FakeAPI:
         buffer = io.BytesIO()
         np.savez_compressed(buffer, **{f"layer_{n}": v for n, v in vectors_for(layers).items()})
         job["npz"] = buffer.getvalue()
-        revision = "b" * 40 if self.mode == "wrong_revision" else CONFIG["revision"]
+        revision = "b" * 40 if self.mode == "wrong_revision" else self.config["revision"]
         job.update(status="succeeded", progress=None, result={
-            "model": CONFIG["model_id"], "revision": revision, "precision": "bfloat16", "quantization": None,
-            "text": "Hello there.", "rendered_prompt": "<bos>rendered", "input_token_ids": [1, 2, 3],
+            "model": self.config["model_id"], "revision": revision, "precision": "bfloat16", "quantization": None,
+            "text": self.chat_output, "rendered_prompt": "<bos>rendered", "input_token_ids": [1, 2, 3],
             "output_token_ids": [4, 5, 6], "usage": {"prompt_tokens": 3, "completion_tokens": 3, "total_tokens": 6},
             "ended_with_eos": True, "hit_token_limit": False, "outcome": "unlabeled", "label_source": None,
             "activations": {"available": True, "sha256": hashlib.sha256(job["npz"]).hexdigest(), "layers": layers,

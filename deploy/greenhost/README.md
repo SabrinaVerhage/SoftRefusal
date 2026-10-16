@@ -24,11 +24,17 @@ This is an explicit deployment command; pushing alone does not update the live w
 
 Useful checks: `systemctl status softrefusal caddy`, `journalctl -u softrefusal -n 60`, and the public `/healthz` endpoint, which returns the deployed commit.
 
+## Choosing the model
+
+The service uses `recorder/configs/gemma3-12b-remote.json` unless `SOFT_REFUSAL_MODEL_CONFIG` names another file in that folder. For visible thinking, add `Environment=SOFT_REFUSAL_MODEL_CONFIG=hermes4-14b-remote.json` to the service, enable Hermes on the GPU, and restart. The recording room and map then show the `<think>` text as the AI's thinking. Hermes automatic tagging is disabled in its config until validated, so new turns stay unlabelled and do not move the refusal reference. Gemma and Hermes recordings use different layer sets and cannot share one map, so start a fresh recordings folder when switching.
+
 ## Visitor and map behavior
 
-Visitors explicitly agree that completed prompts and replies appear on the public map. An HTTP-only cookie owns their conversation; one visitor cannot send or stop another visitor's turn. GPU credentials and raw activation files are never public. The queue admits at most ten pending turns and one pending turn per visitor. Replies are capped at 512 tokens and can be stopped. Automatic labels are model judgments, not ground truth.
+Visitors explicitly agree that completed prompts and replies appear on the public map. An HTTP-only cookie owns their conversation; one visitor cannot send or stop another visitor's turn. GPU credentials and raw activation files are never public. The queue admits at most ten pending turns and one pending turn per visitor. Replies are capped at the model config's `max_new_tokens` (512 for Gemma, 1024 for Hermes, whose thinking counts toward it) and can be stopped. Automatic labels are model judgments, not ground truth.
 
 The map starts with a clearly marked illustrative view. Actual recorded turns replace it automatically. Fewer than six distinct turns use a labeled PCA preview; UMAP starts once there is sufficient data. The fixed refusal-centered view also requires suitable answered/refused labels; it is unavailable until those exist. A failed map rebuild retains the previous map and all recordings.
+
+The public map shows each conversation as a line, a legend and, for a selected line, the AI's thinking at its refusal moment (or its turn closest to the core). It does not show prompts or replies. Add `?tools` to the map URL for the research controls: datasets, layers, filters, search and replay.
 
 The GPU must be online for new replies. Hosting does not start, renew, or stop GPU billing. No periodic recording backup is configured by this deployment.
 
