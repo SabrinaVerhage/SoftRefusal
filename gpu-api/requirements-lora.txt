@@ -1,0 +1,3 @@
+# Optional adapter support; install into the existing GPU environment with --no-deps
+# after verifying the pinned Torch/Transformers/Diffusers dependencies.
+peft==0.18.1

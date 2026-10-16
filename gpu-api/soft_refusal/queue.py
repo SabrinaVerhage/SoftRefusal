@@ -10,6 +10,7 @@ from collections import deque
 from fastapi import HTTPException
 from .progress import clear_cancel, request_cancel
 from .schemas import ChatRequest
+from .loras import available_adapters
 
 # Request problems and user cancellations leave a healthy resident model loaded.
 KEEP_WORKER = {"input_too_long", "invalid_chat_template", "invalid_record_layers", "cancelled_by_user"}
@@ -91,6 +92,9 @@ class GPUQueue:
                 return previous["id"]
         if not self.accepting:
             raise HTTPException(503, detail={"code": "submissions_paused"})
+        if kind == "image" and payload.get("lora", "none") != "none" and not any(
+                a["id"] == payload["lora"] and a["available"] for a in available_adapters()):
+            raise HTTPException(503, detail={"code": "image_adapter_unavailable"})
         if payload["model"] == "hermes" and not self.settings.hermes_enabled:
             raise HTTPException(409, detail={"code": "comparison_model_not_enabled"})
         if self.store.record_count() >= 10000 or shutil.disk_usage(self.settings.data).free < 2 * 1024**3:

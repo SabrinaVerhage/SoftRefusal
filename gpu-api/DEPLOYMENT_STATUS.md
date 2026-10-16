@@ -9,10 +9,20 @@ All four older Pods were verified stopped at $0.00/hour in RunPod. Original BF16
 native model templates, one resident model and the shared serial GPU queue remain.
 
 - Public chat: https://softrefusal.sabrinaverhage.com/ now serves Hermes 4 14B with
-  emitted reasoning separate from the final answer. Website release `c8f490a68e7abcbd2c4f4e9ff36d82db41373dd1`.
+  emitted reasoning separate from the final answer. Website release `5ef8fca0fdd59e30b6942543125ef43a8a6726a0`.
+- Public image gallery: https://softrefusal.sabrinaverhage.com/gallery/ shows completed
+  images submitted with explicit sharing consent. Earlier private images remain private.
+  Deployed from `codex/image-gallery`; draft PR https://github.com/SabrinaVerhage/SoftRefusal/pull/1
+  must be merged before a future default-main deployment to retain this feature.
 - Separate images: https://softrefusal.sabrinaverhage.com/images/ serves FLUX.2 klein
   4B through server-side authenticated jobs. Private PNG copies survive GPU shutdown.
   Queue position/progress, completed images, no-image outcomes and technical errors are distinct.
+- LoRA selector and body-shape-v1 are installed and enabled. User-provided local
+  safetensors matched the pinned SHA256; PEFT0.18.1 installed without dependency
+  upgrades. All200 tensors verified against the running distilled4B checkpoint.
+  Neutral clothed portrait original/LoRA/original test passed, with exact original
+  PNG restoration. See LORAS.md for naming normalization and restart flags.
+  Current API PID16339, log runtime/api-lora-20261016.log; recheck before acting.
 - VPS private connection now points to https://movffvxo1jho2z-8000.proxy.runpod.net.
   Original application token unchanged, private pre-change connection backup retained.
 - Hermes data and map: `/var/lib/softrefusal/models/hermes`. Existing Gemma recordings,

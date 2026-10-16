@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f2f0ec"><title>Soft Refusal · Image gallery</title>
+  <link rel="stylesheet" href="/assets/phone.css"><link rel="stylesheet" href="/assets/gallery.css">
+</head>
+<body><main class="room gallery-room">
+  <header><a class="brand" href="/">✳ <span>SOFT REFUSAL<small>IMAGE GALLERY</small></span></a></header>
+  <section class="gallery-intro"><div><span class="eyebrow">A COLLECTION MADE TOGETHER · FLUX.2 KLEIN</span><h1>From a few words,<br><em>something to see.</em></h1><p>Images imagined by visitors. Open one to see the prompt that started it.</p></div><a class="primary create-link" href="/images/">Create an image ↗</a></section>
+  <div class="gallery-toolbar"><h2>The collection</h2><button id="refresh" class="text-button" type="button">Refresh ↻</button></div>
+  <p id="gallery-status" class="fine" role="status" aria-live="polite">Loading the collection…</p>
+  <section id="gallery" class="gallery-grid" aria-label="Images created by visitors"></section>
+  <div id="empty" class="empty-gallery" hidden><span aria-hidden="true">✳</span><h2>The first image is still a possibility.</h2><p>Create one and give this collection its beginning.</p><a href="/images/">Enter the image room ↗</a></div>
+  <button id="more" class="more-button" type="button" hidden>Show more images ↓</button>
+  <footer>Made with FLUX.2 klein · Images and prompts shared with permission · Saved images remain here when the model is offline.</footer>
+</main>
+<dialog id="detail" aria-labelledby="detail-title"><div class="detail-toolbar"><h2 id="detail-title">A visitor’s image</h2><button id="close-detail" type="button" aria-label="Close image">Close ×</button></div><img id="detail-image" alt=""><p id="detail-prompt"></p><p id="detail-settings" class="fine"></p><a id="download" class="download-link">Download PNG ↧</a></dialog>
+<script src="/assets/gallery.js"></script></body></html>

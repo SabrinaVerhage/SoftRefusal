@@ -61,3 +61,5 @@ class ImageRequest(BaseModel):
     # Distilled checkpoint's published baseline: four steps, guidance 1.0.
     steps: Literal[4] = 4
     seed: int = Field(default=0, ge=0, le=2147483647)
+    lora: Literal["none", "body-shape-v1"] = "none"
+    lora_strength: float = Field(default=0.7, gt=0, le=1, allow_inf_nan=False, strict=True)

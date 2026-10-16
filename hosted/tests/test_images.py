@@ -59,6 +59,8 @@ def test_image_ownership_idempotency_and_offline_results(tmp_path):
         assert first.get(job["result_url"]).content == PNG
         assert second.get(job["result_url"]).status_code == 404
         assert second.get("/api/images").json()["jobs"] == []
+        assert second.get("/api/gallery").json()["images"] == []
+        assert second.get(f"/api/gallery/{job['id']}/image").status_code == 404
         assert len([c for c in calls if c[1] is not None]) == 1
         assert "upstream_id" not in json.dumps(job)
         g.images.online = False
@@ -118,3 +120,89 @@ def test_hermes_uses_isolated_recordings_and_instruction(tmp_path, monkeypatch):
     assert hermes.service.auto_label_enabled is False
     assert hermes.state(hermes.token_owner(token))["model"]["id"] == "NousResearch/Hermes-4-14B"
     hermes.db.close()
+
+
+def test_shared_gallery_persists_without_gpu_or_cookie(tmp_path):
+    g, app = make(tmp_path)
+    g.images.request = lambda *a, binary=False, **kw: PNG if binary else {
+        "job_id": "c" * 32, "status": "succeeded", "result": {"image_available": True}}
+    with TestClient(app) as client:
+        enter(client)
+        g.images.online = True
+        assert submit(client, share_gallery="true").status_code == 400
+        assert submit(client, share_gallery=True).status_code == 200
+        job = finish(client)
+        assert job["shared"] is True
+        assert submit(client, share_gallery=False).status_code == 409
+        g.images.online = False
+        anonymous = TestClient(app)
+        gallery = anonymous.get("/api/gallery").json()
+        assert len(gallery["images"]) == 1
+        item = gallery["images"][0]
+        assert item["prompt"] == "A blue ceramic cup"
+        assert not {"owner", "upstream_id", "payload"} & item.keys()
+        assert anonymous.get(item["image_url"]).content == PNG
+        assert anonymous.get(job["result_url"]).status_code == 404
+        assert anonymous.get("/gallery/").status_code == 200
+    g.db.close()
+    restarted, new_app = make(tmp_path)
+    with TestClient(new_app) as visitor:
+        assert visitor.get("/api/gallery").json()["images"][0]["id"] == job["id"]
+        assert visitor.get(item["image_url"]).content == PNG
+        (tmp_path / "images" / (job["id"] + ".png")).unlink()
+        assert visitor.get(item["image_url"]).status_code == 404
+
+
+def test_gallery_pagination_excludes_private_and_incomplete(tmp_path):
+    g, app = make(tmp_path)
+    g.start = lambda: None
+    payload = json.dumps({"width": 512, "height": 512, "seed": 42})
+    for i in range(28):
+        g.db.execute("INSERT INTO jobs(id,owner,conversation,prompt,status,created,request_key,kind,payload,shared) VALUES (?,?,?,?,?,?,?,?,?,?)",
+                     (str(i), "owner", "", "test", "running" if i == 27 else "complete", i, str(i), "image", payload, 0 if i == 26 else 1))
+    g.db.commit()
+    with TestClient(app) as client:
+        first = client.get("/api/gallery").json()
+        assert len(first["images"]) == 24
+        assert first["images"][0]["id"] == "25"
+        second = client.get(f"/api/gallery?offset={first['next_offset']}").json()
+        assert [row["id"] for row in second["images"]] == ["1", "0"]
+        assert second["next_offset"] is None
+        assert client.get("/api/gallery?offset=-1").status_code == 400
+        assert client.get("/api/gallery/27/image").status_code == 404
+
+
+def test_lora_readiness_payload_idempotency_and_gallery_metadata(tmp_path):
+    g, app = make(tmp_path)
+    calls = []
+    def request(path, body=None, key=None, binary=False):
+        if body is not None:
+            calls.append(body)
+        return PNG if binary else {"job_id": "d" * 32, "status": "succeeded",
+                                   "result": {"image_available": True}}
+    g.images.request = request
+    with TestClient(app) as client:
+        enter(client)
+        g.images.online = True
+        assert submit(client, lora="https://example.com/adapter").status_code == 400
+        assert submit(client, lora_strength=True).status_code == 400
+        assert submit(client, lora_strength=1.1).status_code == 400
+        selected = dict(lora="body-shape-v1", lora_strength=.6, share_gallery=True)
+        assert submit(client, **selected).status_code == 503
+        assert not client.get("/api/images").json()["loras"][0]["available"]
+        g.images.available_loras = {"body-shape-v1"}
+        assert client.get("/api/images").json()["loras"][0]["available"]
+        result = submit(client, **selected)
+        assert result.status_code == 200
+        job = finish(client)
+        assert calls[0]["lora"] == "body-shape-v1"
+        assert calls[0]["lora_strength"] == .6
+        assert job["lora"]["strength"] == .6
+        assert len(job["lora"]["sha256"]) == 64
+        assert client.get("/api/gallery").json()["images"][0]["lora"] == job["lora"]
+        g.images.available_loras.clear()
+        assert submit(client, **selected).json() == result.json()
+        assert submit(client, **{**selected, "lora_strength": .8}).status_code == 409
+        assert submit(client, key="original-model-002").status_code == 200
+        finish(client)
+        assert "lora" not in calls[1]

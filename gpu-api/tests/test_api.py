@@ -77,13 +77,36 @@ def setup(tmp_path, **overrides):
     auth.write_text(json.dumps([{"subject": k, "sha256": hashlib.sha256(v.encode()).hexdigest(),
                                 "admin": k == "operator"} for k, v in TOKENS.items()]))
     values = dict(data=tmp_path / "runtime", auth_file=auth, accept_requests=True,
-                  hermes_enabled=True, job_timeout=2, idle_unload=10)
+                  hermes_enabled=True, job_timeout=2, idle_unload=10, web_root="")
     values.update(overrides)
     return Settings(**values)
 
 
 def body(model="gemma", content="Hello"):
     return {"model": model, "messages": [{"role": "user", "content": content}]}
+
+
+def test_image_adapter_admission_and_payload(tmp_path, monkeypatch):
+    ready = []
+    monkeypatch.setattr("soft_refusal.queue.available_adapters", lambda: ready)
+    backend = FakeBackend()
+    with TestClient(create_app(setup(tmp_path), backend)) as client:
+        selected = {"prompt": "A fully clothed adult portrait", "lora": "body-shape-v1", "lora_strength": .6}
+        assert client.post("/v1/images/jobs", json=selected, headers=headers()).status_code == 503
+        assert backend.payloads == []
+        ready.append({"id": "body-shape-v1", "available": True})
+        response = client.post("/v1/images/jobs", json=selected, headers=headers(key="adapter-test"))
+        assert response.status_code == 202
+        completed(client, response.json()["job_id"])
+        assert backend.payloads[0]["lora"] == "body-shape-v1"
+        assert backend.payloads[0]["lora_strength"] == .6
+        ready.clear()
+        assert client.post("/v1/images/jobs", json=selected, headers=headers(key="adapter-test")).json()["job_id"] == response.json()["job_id"]
+        assert client.post("/v1/images/jobs", json={**selected, "lora_strength": .8},
+                           headers=headers(key="adapter-test")).status_code == 409
+        original = client.post("/v1/images/jobs", json={"prompt": "A ceramic cup"}, headers=headers())
+        completed(client, original.json()["job_id"])
+        assert "lora" not in backend.payloads[1]
 
 
 def completed(client, job_id, actor="alice"):

@@ -7,7 +7,9 @@ from pathlib import Path
 root = Path(__file__).resolve().parents[1]
 target = root / "soft-refusal-deploy.zip"
 files = [root / name for name in ("AGENTS.md", "README.md", "DEPLOYMENT_LOG.md", "DEPLOYMENT_STATUS.md", "requirements-api.txt", "requirements-gpu.txt", ".env.example", ".gitignore")]
-for folder, suffixes in (("soft_refusal", {".py"}), ("public", {".html", ".css", ".js"}),
+files.append(root / "requirements-lora.txt")
+files.append(root / "LORAS.md")
+for folder, suffixes in (("soft_refusal", {".py", ".json"}), ("public", {".html", ".css", ".js"}),
                           ("scripts", {".py", ".sh"}), ("tests", {".py"})):
     files.extend(p for p in (root / folder).rglob("*") if p.is_file() and p.suffix in suffixes)
 with zipfile.ZipFile(target, "w", compression=zipfile.ZIP_DEFLATED) as archive:

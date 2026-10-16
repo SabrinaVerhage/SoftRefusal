@@ -1,6 +1,8 @@
 """Owned image jobs on the existing durable visitor queue; credentials stay private."""
 import hashlib
 import json
+import math
+from pathlib import Path
 import re
 import secrets
 import shutil
@@ -11,12 +13,24 @@ import urllib.request
 from fastapi import HTTPException
 from avoidance.remote import load_connection
 
+ADAPTERS = json.loads((Path(__file__).resolve().parents[1] / "gpu-api/soft_refusal/loras.json").read_text(encoding="utf-8"))
+
+
+def adapter_info(settings):
+    key = settings.get("lora", "none")
+    if key == "none":
+        return None
+    spec = ADAPTERS[key]
+    return {"id": key, "name": spec["name"], "version": spec["version"],
+            "sha256": spec["sha256"], "strength": settings["lora_strength"]}
+
 
 class ImageJobs:
     def __init__(self, gateway):
         self.g = gateway
         self.online = False
         self.progress = {}
+        self.available_loras = set()
 
     def request(self, path, body=None, key=None, binary=False):
         c = load_connection(self.g.connection_file)
@@ -54,6 +68,9 @@ class ImageJobs:
         if not owner:
             raise HTTPException(401, "Enter the image testing room first.")
         prompt, key = body.get("prompt"), body.get("request_key")
+        shared = body.get("share_gallery", False)
+        if type(shared) is not bool:
+            raise HTTPException(400, "Choose whether to share this image in the gallery.")
         width, height, seed = (body.get(k, d) for k, d in (("width", 512), ("height", 512), ("seed", 42)))
         if not isinstance(prompt, str) or not 1 <= len(prompt.strip()) <= 4000:
             raise HTTPException(400, "Write a prompt of 1–4,000 characters.")
@@ -63,16 +80,26 @@ class ImageJobs:
             raise HTTPException(400, "Choose 512, 768 or 1024 pixels.")
         if type(seed) is not int or not 0 <= seed <= 2147483647:
             raise HTTPException(400, "Seed must be an integer between 0 and 2147483647.")
-        payload = json.dumps(dict(model="flux", prompt=prompt.strip(), width=width, height=height, seed=seed, steps=4), sort_keys=True)
+        lora, strength = body.get("lora", "none"), body.get("lora_strength", 0.7)
+        if not isinstance(lora, str) or lora not in {"none", *ADAPTERS}:
+            raise HTTPException(400, "Choose a listed LoRA.")
+        if type(strength) not in (float, int) or not math.isfinite(strength) or not 0 < strength <= 1:
+            raise HTTPException(400, "LoRA strength must be greater than 0 and at most 1.")
+        settings = dict(model="flux", prompt=prompt.strip(), width=width, height=height, seed=seed, steps=4)
+        if lora != "none":
+            settings.update(lora=lora, lora_strength=float(strength))
+        payload = json.dumps(settings, sort_keys=True)
         g = self.g
         with g.lock:
             old = g.db.execute("SELECT * FROM jobs WHERE owner=? AND request_key=?", (owner, key)).fetchone()
             if old:
-                if old["kind"] != "image" or old["payload"] != payload:
+                if old["kind"] != "image" or old["payload"] != payload or bool(old["shared"]) != shared:
                     raise HTTPException(409, "Request key was already used for a different request.")
                 return old["id"]
             if not g.accepting or not self.online:
                 raise HTTPException(503, "The image model is offline. Try again when it is online.")
+            if lora != "none" and lora not in self.available_loras:
+                raise HTTPException(503, "This LoRA is not available yet. Choose Original model.")
             if g.db.execute("SELECT 1 FROM jobs WHERE owner=? AND status IN ('queued','running')", (owner,)).fetchone():
                 raise HTTPException(409, "Your previous image or chat request is still in progress.")
             if g.db.execute("SELECT count(*) FROM jobs WHERE status IN ('queued','running')").fetchone()[0] >= 10:
@@ -84,8 +111,8 @@ class ImageJobs:
             g.limit("send:" + owner, 6)
             g.limit("ip:" + hashlib.sha256(ip.encode()).hexdigest(), 30)
             jid = secrets.token_hex(16)
-            g.db.execute("INSERT INTO jobs(id,owner,conversation,prompt,status,created,request_key,kind,payload) VALUES (?,?,'',?,'queued',?,?,'image',?)",
-                         (jid, owner, prompt.strip(), time.time(), key, payload))
+            g.db.execute("INSERT INTO jobs(id,owner,conversation,prompt,status,created,request_key,kind,payload,shared) VALUES (?,?,'',?,'queued',?,?,'image',?,?)",
+                         (jid, owner, prompt.strip(), time.time(), key, payload, int(shared)))
             g.db.commit()
             g.wake.set()
             return jid
@@ -97,6 +124,8 @@ class ImageJobs:
             for row in g.db.execute("SELECT * FROM jobs WHERE owner=? AND kind='image' ORDER BY created DESC LIMIT 20", (owner,)):
                 item = {k: row[k] for k in ("id", "prompt", "status", "error")}
                 item["settings"] = json.loads(row["payload"])
+                item["lora"] = adapter_info(item["settings"])
+                item["shared"] = bool(row["shared"])
                 if row["status"] == "queued":
                     item["position"] = g.db.execute("SELECT count(*) FROM jobs WHERE status IN ('queued','running') AND created<=?", (row["created"],)).fetchone()[0]
                 item.update(self.progress.get(row["id"], {}))
@@ -105,7 +134,36 @@ class ImageJobs:
                 jobs.append(item)
             active = bool(g.db.execute("SELECT 1 FROM jobs WHERE owner=? AND status IN ('queued','running')", (owner,)).fetchone())
             return {"signed_in": bool(owner), "online": self.online, "busy": active, "jobs": jobs,
+                    "loras": [{"id": key, "name": spec["name"], "description": spec["description"],
+                               "default_strength": spec["default_strength"],
+                               "available": self.online and key in self.available_loras} for key, spec in ADAPTERS.items()],
                     "model": "FLUX.2 klein 4B", "precision": "bfloat16", "steps": 4}
+
+    def gallery(self, offset=0):
+        if not 0 <= offset <= 10000:
+            raise HTTPException(400, "Invalid gallery page.")
+        with self.g.lock:
+            rows = self.g.db.execute(
+                "SELECT id,prompt,payload,created FROM jobs WHERE kind='image' AND shared=1 AND status='complete' ORDER BY created DESC,id DESC LIMIT 25 OFFSET ?",
+                (offset,)).fetchall()
+        images = []
+        for row in rows[:24]:
+            settings = json.loads(row["payload"])
+            images.append({"id": row["id"], "prompt": row["prompt"], "created": row["created"],
+                           "width": settings["width"], "height": settings["height"], "seed": settings["seed"],
+                           "lora": adapter_info(settings),
+                           "image_url": f"/api/gallery/{row['id']}/image"})
+        return {"images": images, "next_offset": offset + 24 if len(rows) > 24 else None}
+
+    def public_image(self, jid):
+        with self.g.lock:
+            row = self.g.db.execute("SELECT id FROM jobs WHERE id=? AND kind='image' AND shared=1 AND status='complete'", (jid,)).fetchone()
+        if not row:
+            raise HTTPException(404, "Image not found.")
+        path = self.g.directory / "images" / (row["id"] + ".png")
+        if not path.is_file():
+            raise HTTPException(404, "Image not found.")
+        return path
 
     def run(self, row):
         g, jid = self.g, row["id"]
