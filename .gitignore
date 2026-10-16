@@ -7,6 +7,7 @@ _design_thinking/
 *.log
 Thumbs.db
 .DS_Store
+__pycache__/
 
 # Screenshots of the RunPod account (balance, Pod pages); kept locally only.
 gpu-api/evidence/

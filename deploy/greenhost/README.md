@@ -60,3 +60,23 @@ automatically called refusals. Request size, per-owner concurrency, rate limits,
 queue capacity and disk-space checks bound admission. Model loading takes time
 when switching between chat and images. Reload recovers the owner's recent jobs;
 restart interrupts pending jobs without automatically resubmitting them.
+
+### Independent weekend shutdown
+
+The existing VPS has `softrefusal-weekend-stop.timer` enabled for
+2026-10-18 21:59 UTC (23:59 Europe/Amsterdam), with persistent catch-up after a VPS
+restart. It calls `/usr/local/sbin/softrefusal-weekend-stop.py`; configuration is in
+`/etc/softrefusal/weekend-stop.json` and its existing Pod-scoped key is root-only.
+No account-wide key is needed. Check access without stopping compute:
+
+```sh
+python3 /usr/local/sbin/softrefusal-weekend-stop.py --check
+systemctl list-timers softrefusal-weekend-stop.timer
+```
+
+The service refuses to stop before the configured deadline, stops only the specified
+Pod, leaves the volume intact and retries temporary failures. After the deadline,
+verify `journalctl -u softrefusal-weekend-stop.service` and the provider's stopped
+state. A read-only check confirms access and scheduling, not execution of a future stop.
+The installed units are saved beside this README for review; do not reuse this fixed
+deadline for another paid session without new authorization.
