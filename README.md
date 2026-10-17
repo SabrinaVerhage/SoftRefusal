@@ -21,6 +21,10 @@ recorder  ──── message + history ────►  gpu-api (RunPod GPU)
 
 ## Checks
 
+For the live Greenhost website, commit on `main` and run `.\deploy.ps1 -Push` from
+PowerShell to push and deploy that commit. `.\deploy.ps1 -Check` compares local,
+GitHub and live versions. See [`deploy/greenhost/README.md`](deploy/greenhost/README.md).
+
 ```bash
 cd recorder && .venv/Scripts/python.exe -m pytest -q --ignore=tests/check_instruction_ui.py --ignore=tests/check_live_browser.py
 cd gpu-api && .venv/Scripts/python.exe -m pytest -q tests

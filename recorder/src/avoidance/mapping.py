@@ -186,6 +186,7 @@ def export_map(runs, out, layer=None, seed=42, neighbors=10, min_dist=0.1, rebui
         points.append({
             "point_id": row["point_id"], "conversation_id": cid, "turn_id": row["turn_id"],
             "previous_point_id": previous.get(cid),
+            "completed_utc": row.get("completed_utc"),
             "conversation_number": row["conversation_number"], "conversation_title": row["conversation_title"],
             "prompt": row["prompt"], "response": row["response"], "outcome": row.get("outcome", "unlabeled"),
             "label_source": row.get("label_source"), "label_reason": row.get("label_reason", ""),

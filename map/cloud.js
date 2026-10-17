@@ -103,6 +103,52 @@
     const radius = 0.16 + 2.89 / (1 + Math.exp(clamp(3.8 * (p.core_score - 0.5), -700, 700)));
     return { x: radius * Math.cos(p.angle), y: radius * Math.sin(p.angle), z: p.lift * 0.42 };
   }
+  function pointTime(p) {
+    const time = Date.parse(p.completed_utc || '');
+    return Number.isFinite(time) ? time : 0;
+  }
+  function isRecentPoint(p, now = Date.now()) {
+    const time = pointTime(p);
+    return time > 0 && now >= time && now - time < 5 * 60 * 1000;
+  }
+  function recentConversations(points, count = 10) {
+    const groups = new Map();
+    for (const p of points) {
+      if (p.conversation_id == null) continue;
+      const old = groups.get(p.conversation_id) || { time: 0, number: 0 };
+      groups.set(p.conversation_id, { time: Math.max(old.time, pointTime(p)), number: Math.max(old.number, p.conversation_number || 0) });
+    }
+    return new Set([...groups].sort((a, b) => b[1].time - a[1].time || b[1].number - a[1].number || String(a[0]).localeCompare(String(b[0]))).slice(0, count).map(([id]) => id));
+  }
+  // Local prompt-word hints, not a claim that model activations have named semantic axes.
+  function themeRegions(points) {
+    const themes = [
+      ['consent & boundaries', /\b(consent|boundar\w*|permission|comfortable|respect|agree)\b/i],
+      ['romance & intimacy', /\b(romanti\w*|kiss\w*|intima\w*|cuddl\w*|tender\w*|love|flirt\w*)\b/i],
+      ['desire & fantasy', /\b(desire|fantas\w*|erotic\w*|arous\w*|pleasure|spicy|sensual\w*)\b/i],
+      ['stories & roleplay', /\b(stor\w*|fiction|roleplay|role.play|character\w*|scene\w*|poem\w*)\b/i],
+      ['relationships', /\b(partner\w*|relationship\w*|dating|boyfriend|girlfriend|marriage|couple\w*)\b/i],
+      ['bodies & health', /\b(bod\w*|health\w*|anatom\w*|contracept\w*|pregnan\w*|orgasm\w*|sex\w*)\b/i]
+    ];
+    const regions = [];
+    for (const [name, pattern] of themes) {
+      const matching = points.filter(p => pattern.test(p.prompt || ''));
+      // Bound annotation work on large imports; the full cloud remains intact.
+      const stride = Math.max(1, Math.ceil(matching.length / 600));
+      const candidates = matching.filter((_, i) => i % stride === 0);
+      if (candidates.length < 2) continue;
+      let cluster = [];
+      for (const anchor of candidates) {
+        const nearby = candidates.filter(p => Math.hypot(p.x - anchor.x, p.y - anchor.y, p.z - anchor.z) <= 1.25);
+        if (nearby.length > cluster.length) cluster = nearby;
+      }
+      if (cluster.length < 2) continue;
+      const center = Object.fromEntries(['x', 'y', 'z'].map(k => [k, cluster.reduce((sum, p) => sum + p[k], 0) / cluster.length]));
+      if (regions.some(r => Math.hypot(r.point.x - center.x, r.point.y - center.y, r.point.z - center.z) < 0.65)) continue;
+      regions.push({ name, point: center, members: cluster, count: cluster.length });
+    }
+    return regions;
+  }
   function project(p, camera, viewport) {
     const x = p.x - camera.target.x, y = p.y - camera.target.y, z = p.z - camera.target.z;
     const cy = Math.cos(camera.yaw), sy = Math.sin(camera.yaw), cp = Math.cos(camera.pitch), sp = Math.sin(camera.pitch);
@@ -110,5 +156,5 @@
     const per = 8 / Math.max(0.4, 8 + depth), scale = viewport.scale * camera.zoom;
     return { x: viewport.cx + xx * per * scale + camera.pan.x, y: viewport.cy - yy * per * scale + camera.pan.y, depth, per };
   }
-  root.CloudMath = { TAU, clamp, rng, surface, makeConcept, normalizePoints, recordingPositions, parseFile, conversationPaths, conversationPath, conversationColorIndex, semanticPosition, nearest, project, topics };
+  root.CloudMath = { TAU, clamp, rng, surface, makeConcept, normalizePoints, recordingPositions, parseFile, conversationPaths, conversationPath, conversationColorIndex, semanticPosition, nearest, project, topics, pointTime, isRecentPoint, recentConversations, themeRegions };
 })(typeof window !== 'undefined' ? window : globalThis);

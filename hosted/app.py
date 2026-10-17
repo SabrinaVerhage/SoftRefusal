@@ -39,7 +39,8 @@ class Gateway:
             raise ValueError("Unsupported hosted model configuration")
         config = read_json(ROOT / "recorder/configs" / config_name)
         self.model = config["remote_model"]
-        self.instruction = config.get("default_instruction", DEFAULT_INSTRUCTION)
+        style = (ROOT / "hosted/chat_instruction.txt").read_text(encoding="utf-8").strip()
+        self.instruction = config.get("default_instruction", DEFAULT_INSTRUCTION) + "\n\n" + style
         self.directory = self.base_directory if self.model == "gemma" else self.base_directory / "models" / self.model
         self.directory.mkdir(parents=True, exist_ok=True)
         self.connection_file = Path(connection_file)
@@ -208,6 +209,9 @@ class Gateway:
                 try:
                     self.db.execute("UPDATE jobs SET status='running' WHERE id=?", (row["id"],))
                     self.db.commit()
+                    # Apply the current backend instruction to resumed conversations as well.
+                    # Earlier checkpoints keep the instruction used when they were recorded.
+                    self.service.set_instruction(row["conversation"], self.instruction)
                     self.service.submit(row["conversation"], row["prompt"], reply_limit=min(1024, self.service.config.get("max_new_tokens", 512)))
                 except Exception:
                     self.db.execute("UPDATE jobs SET status='error', error=? WHERE id=?", ("Could not start this reply. Please try again.", row["id"]))

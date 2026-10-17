@@ -312,7 +312,7 @@ class ChatService:
                "model_id": self.config["model_id"], "model_revision": self.config["revision"],
                "layers": self.config["layers"], "site": "resid_post", "token_selection": "last_prompt",
                "synthetic": False, "snapshot_preview": self.job["snapshots"],
-               "recording_attempt_id": self.job["id"], **result}
+               "recording_attempt_id": self.job["id"], **result, "completed_utc": now()}
         rows.append(row)
         relative = f"checkpoints/{turn + 1:06d}-{self.job['id'][:8]}"
         destination = self.root / sid / relative

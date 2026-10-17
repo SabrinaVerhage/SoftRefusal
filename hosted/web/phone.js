@@ -6,6 +6,9 @@
   // Thinking panels the visitor opened or closed themselves, keyed by turn.
   const toggled = new Map();
   let modelName = 'Model';
+  function scrollToLatest() {
+    requestAnimationFrame(() => window.scrollTo({top: document.documentElement.scrollHeight, behavior: 'instant'}));
+  }
   try { pending = JSON.parse(sessionStorage.getItem('softrefusal.pending') || 'null'); } catch {}
   function error(text) { $('error').textContent = text || ''; $('error').hidden = !text; }
   async function api(path, body) {
@@ -65,7 +68,6 @@
     $('prompt').placeholder = turns ? 'Push a little further…' : 'Try to get the AI to talk spicy…';
     const next = JSON.stringify([modelName, state.rows, job]);
     if (next !== signature) {
-      const nearBottom = window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 140;
       signature = next; const nodes = [];
       // Saved turns are visible while the separate automatic tag is still running.
       const alreadySaved = job && state.rows.some(row => row.prompt === job.prompt && row.response === job.response) && job.stage === 'labelling';
@@ -77,7 +79,8 @@
       if (live) { nodes.push(userBubble(job.prompt)); if (job.response) nodes.push(aiBubble('live', job.response, {live: true, latest: true})); }
       $('messages').replaceChildren(...nodes);
       $('starters').hidden = nodes.length > 0;
-      if (nearBottom && nodes.length) $('composer').scrollIntoView({block:'end',behavior:'instant'});
+      // Follow new messages and streamed replies, including when the keyboard resized the page.
+      if (nodes.length) scrollToLatest();
     }
     controls();
   }
@@ -88,6 +91,7 @@
   function updateCount() { const n = $('prompt').value.length; $('count').textContent = n > 3000 ? `${n.toLocaleString()} / 4,000` : ''; controls(); }
   $('consent').onchange=controls;
   $('prompt').oninput=updateCount;
+  window.visualViewport?.addEventListener('resize', () => { if (sid && (busy || document.activeElement === $('prompt'))) scrollToLatest(); });
   document.querySelectorAll('.chip').forEach(chip => { chip.onclick = () => { $('prompt').value = chip.textContent; updateCount(); $('prompt').focus(); }; });
   $('start').onclick=async()=>{ posting=true;controls();error('');try { const result=await api('/api/start',{consent:true});fresh=false;sid=result.conversation;toggled.clear();await refresh();$('prompt').focus(); }catch(e){error(e.message);}finally{posting=false;controls();} };
   $('new').onclick=()=>{ fresh=true;sid=null;sessionStorage.removeItem('softrefusal.conversation');$('welcome').hidden=false;$('conversation').hidden=true;$('consent').checked=false;signature='';controls();window.scrollTo(0,0); };

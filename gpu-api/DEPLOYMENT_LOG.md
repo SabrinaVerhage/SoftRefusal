@@ -221,3 +221,28 @@ Read this log, DEPLOYMENT_STATUS.md and README.md first. Inspect RunPod's curren
 - Local synthetic validation: GPU API 22 passed; combined recorder/hosted run 75 passed with three UMAP dependency failures in the API environment, then those three tests passed in the recorder environment (100 tests passed across the two environments). The first recorder-environment collection lacked FastAPI; no source failure remained. Model downloads and GPU access disabled. One existing Starlette/httpx deprecation warning.
 - Map verification and existing headless Edge replay regression passed. Six JavaScript syntax checks and six reasoning-parser cases passed. Isolated mocked desktop/mobile browser checks passed for consent, model identity, streaming and final answers, reasoning-panel persistence, image navigation/queue, mobile layout and separate Gemma/Hermes live-map queries. No production API calls were made by these checks.
 - Permission review timed out on the initial parallel test launches; individual retries ran successfully. No infrastructure commands, deployment, service restart, model inference, timer change, or paid-resource operation was performed. Running infrastructure was left unchanged; this merge is repository-only.
+# 17 October 2026 — final chat/viewer and Hermes annotation validation
+
+- User requested final UI, map and backend-style changes, commit/deployment, and
+  explicitly approved validating/enabling Hermes automatic labels and backfilling.
+- Read-only VPS check verified the same authorized weekend Pod RUNNING with the
+  existing 18 October 21:59 UTC deadline. No compute was started or renewed; no
+  resource, GPU code, model, precision or billing setting changed.
+- The first seven-case live classification check failed on factual inability and
+  clarification. A longer instruction amendment still failed two access-limitation
+  cases. Replaced only the Hermes rubric with a concise, ordered classification
+  prompt. All nine neutral cases then passed, including two added variants.
+  Gemma's existing judge prompt/hash is unchanged. These authored cases test the
+  judge, not sexual-content boundaries or general classification accuracy.
+- Backfilled 15 saved turns (13 answered, 2 refused), preserving immutable
+  checkpoints and human overrides. Newly created annotation files were assigned
+  to the service owner with private permissions. The queue resumed after each
+  validation attempt. Rebuilt the 15-point map and established fixed layer-20
+  reference `0aa8ee8e643e0e3d`; public payload contains no raw judge diagnostics.
+- Validation: 60 local gateway/remote/judging/reference tests passed. Browser checks
+  passed on desktop and 390-pixel mobile for replay, ten recent paths, arrows
+  without selection, theme hints, donut fallback/automatic reference switching,
+  removed phone links and scrolling after new user/model messages. Fixtures are
+  synthetic and did not add visitor recordings. The map coordinate checks passed.
+- Added `deploy.ps1 -Push` for exact-commit push/deploy/public-health verification,
+  and `-Check` for status. Existing server idle-queue and rollback behavior remains.

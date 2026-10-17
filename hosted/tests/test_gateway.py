@@ -66,9 +66,11 @@ def test_record_and_publish_with_isolation(setup):
         assert result["rows"][0]["response"] == "Hello there."
         assert "path" not in json.dumps(result)
     assert len(api.requests) == 2
+    assert all('under 50 words' in request['messages'][0]['content'] for request in api.requests)
     build(gateway.directory)
     payload = first.get("/api/map").json()
     assert len(payload["points"]) == 2
+    assert all(point['completed_utc'] for point in payload['points'])
     assert all("label_reason" not in point for point in payload["points"])
     assert "pca_preview" in json.dumps(payload)
     assert first.get("/api/state").json()["conversation"] == sid
@@ -125,3 +127,14 @@ def test_model_config_can_select_a_thinking_model(tmp_path, monkeypatch):
     gateway = Gateway(tmp_path, tmp_path / "missing", lambda c: None, map_enabled=False)
     assert gateway.service.config["remote_model"] == "hermes"
     assert "<think>" in gateway.instruction
+    assert "text-message conversation" in gateway.instruction
+    gateway.db.close()
+
+
+def test_resumed_conversation_uses_current_backend_instruction(setup):
+    api, gateway, _, client = setup
+    sid = start(client)
+    gateway.service.set_instruction(sid, 'An earlier instruction.')
+    assert send(client, sid).status_code == 200
+    assert finish(client, sid)['job']['status'] == 'complete'
+    assert api.requests[-1]['messages'][0]['content'] == gateway.instruction

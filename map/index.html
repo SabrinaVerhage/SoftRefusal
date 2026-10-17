@@ -22,7 +22,8 @@
       <p class="eyebrow"><span class="tiny-cross">×</span> SOFT REFUSAL</p>
       <h1>THE SHAPE<br>OF REFUSAL<span class="title-period">.</span></h1>
       <p class="intro-copy research">A landscape of closeness,<br>desire, and the places<br>a model won’t go.</p>
-      <p class="subtitle public-only">A map of every conversation in which visitors tried to get an AI to talk explicitly about sex. <b>Each line is one conversation.</b> The closer it comes to the core, the more the AI’s inner state resembled a refusal.</p>
+      <p id="map-description" class="subtitle public-only">A pink landscape of conversation and refusal.</p>
+      <p id="projection-note" class="projection-note public-only"></p>
       <div class="source-note"><span class="source-light"></span><span id="source-summary">Illustrative field · synthetic points</span></div>
     </section>
 
@@ -34,7 +35,8 @@
       <div class="legend-row"><i class="dot redirected"></i><span>AI redirected</span></div>
       <div class="legend-row"><i class="dot refused"></i><span>AI refused</span></div>
       <div class="legend-row"><i class="legend-core" aria-hidden="true"></i><span>Refusal core</span></div>
-      <p class="legend-hint">Tap a line to see what the AI was thinking.</p>
+      <p class="legend-hint">Arrows follow message order. The ten most recently active conversations keep their lines; older turns remain as faded dots. A soft halo marks turns completed in the last five minutes.</p>
+      <p class="legend-hint">Faint words name nearby prompt themes, inferred from wording. Tap a line or dot to see the AI’s generated reasoning.</p>
     </section>
 
     <section id="layers" class="layers research" aria-label="Map controls">
@@ -139,7 +141,8 @@
     <p><b>Load points</b> accepts JSON arrays, objects containing a <code>points</code> array, or JSONL, including Recording Room’s <code>points.jsonl</code>. Each point needs numeric <code>x</code>, <code>y</code>, and <code>z</code>. Optional prompt, topic, outcome, conversation, and previous-point fields appear when supplied. Imported coordinates are centered and uniformly scaled; they are never warped into the reference shape. Your file stays in this browser.</p>
     <p><b>Your recordings · donut</b> uses a fixed reference fitted from answered and refused turns. New exports reuse its direction, angular basis and vertical scale, so existing states stay in place. Radius smoothly compresses the reference score into the chosen sphere-and-donut geometry; it is not a probability. Angle describes remaining internal-state variation, not a validated topic label. Changing response labels updates markers without moving points. Redirection alone does not define the core. Older exports without a reference badge retain their original exploratory coordinates.</p>
     <p><b>Follow a conversation</b> selects a coloured path. Play, pause, step or scrub through its turns; future turns stay faint until reached. Arrows join recorded checkpoints directly. They do not show measured motion between turns. The sphere and field texture are illustrative; approaching the sphere does not establish a causal refusal mechanism.</p>
-    <p><b>Your recordings · UMAP</b> are your conversations from the cloud GPU recording room. Each point is one turn: Gemma 3 12B’s internal state at the final token before it replied, placed by a separate 3D UMAP for each recorded layer. Switch layers to see how the arrangement changes with depth; dashed lines follow each conversation in order. With few turns, the layout is a sketch. Rebuild it with <code>Update Map from Recordings.cmd</code>.</p>
+    <p><b>Your recordings · UMAP</b> shows the selected model’s state before each reply, with a separate projection for each layer. The hosted service refits UMAP after completed turns, so existing points can move. The fixed-reference donut stays stable instead. Fewer than six distinct states use a PCA preview. Until answered/refused anchors exist, the public viewer keeps the pink donut as an illustrative backdrop; proximity to that core does not measure refusal.</p>
+    <p><b>Theme clouds</b> are local prompt-word hints near groups of related turns, not discovered labels for the model’s internal axes. Only the ten most recently active conversations have lines. Older points stay visible and selectable. New turns carry a five-minute halo; reduced-motion mode uses a still halo. Older recordings without completion timestamps are not marked as new.</p>
     <p>UMAP axes have no intrinsic meaning. Nearby points in the projection are not proof of a shared cause of refusal. Neighbors here are measured in the displayed 3D coordinates.</p>
     <div class="about-keys"><span>← ↑ ↓ → <b>Orbit</b></span><span>+ / − <b>Zoom</b></span><span>R <b>Reset</b></span><span>F <b>Focus point</b></span><span>Esc <b>Stop motion</b></span></div>
     <p class="about-credit">VISUAL DIRECTION / @sextechsabrina<br>Mapping the Sexual Avoidance of Artificial Intelligence</p>

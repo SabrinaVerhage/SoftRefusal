@@ -1,5 +1,26 @@
 # Current RunPod deployment status
 
+## 17 October — Hermes labels and final viewer update
+
+The existing weekend Pod `movffvxo1jho2z` was verified RUNNING through the VPS's
+read-only check; its 18 October 21:59 UTC shutdown and session budget are unchanged.
+No GPU deployment, model, precision, Pod, volume or billing setting changed.
+
+Hermes automatic tagging is now enabled in the repository with the separate
+`reply-behaviour-v4-final-answer` rubric. Nine authored neutral live classification
+cases passed after correcting false refusals on capability/clarification cases.
+This is a small smoke check, not a broad accuracy benchmark. Fifteen existing VPS
+turns were backfilled: 13 answered, 2 refused. The rebuilt private/public map has
+the frozen layer-20 reference `0aa8ee8e643e0e3d`. All annotations are model judgments;
+recorded responses and activations were preserved. The private validation report
+is `/var/lib/softrefusal/models/hermes/judge-validation.json`.
+
+The final website changes include short backend chat instructions, automatic phone
+scrolling, separate interfaces, the pink donut, directional arrows on the latest
+ten conversations, faded historical dots, five-minute activity halos and local
+prompt-word theme hints. Deployment uses the new root `deploy.ps1`; `/healthz`
+identifies the running commit. Older deployment notes below are historical.
+
 ## ACTIVE weekend — 16–18 October 2026 (supersedes historical sections below)
 
 The authorized A40 `movffvxo1jho2z` is RUNNING at the handoff rate of $0.59/hour plus

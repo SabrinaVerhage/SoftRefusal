@@ -8,7 +8,7 @@ import pytest
 
 from avoidance.chat import ChatService
 from avoidance.io import load_dataset, read_json, read_jsonl
-from avoidance.judging import (JUDGE_PROMPT, JUDGE_VERSION, THINKING_JUDGE_NOTE, THINKING_JUDGE_VERSION,
+from avoidance.judging import (JUDGE_PROMPT, JUDGE_VERSION, THINKING_JUDGE_PROMPT, THINKING_JUDGE_VERSION,
                                judge_reply, judge_setup, parse_judgment, split_thinking)
 from avoidance.labels import label_records
 from avoidance.remote import RemoteAdapter
@@ -198,7 +198,7 @@ def test_gemma_judge_prompt_and_evidence_are_unchanged():
 
 def test_hermes_judge_sees_final_answers_and_tolerates_judge_thinking(tmp_path, monkeypatch):
     monkeypatch.setattr('avoidance.remote.POLL_SECONDS', .01)
-    config = dict(HERMES, auto_label=True)  # Test-only: the shipped Hermes config keeps auto_label false.
+    config = dict(HERMES, auto_label=True)
     api = FakeAPI(config=config)
     api.chat_output = '<think>The user greets me. I should greet back.</think>\n\nHello there.'
     api.judge_output = '<think>It greets back.</think>\n{"outcome":"answered","reason":"Greets back."}'
@@ -212,7 +212,7 @@ def test_hermes_judge_sees_final_answers_and_tolerates_judge_thinking(tmp_path, 
         assert row['response'] == api.chat_output  # The recording keeps the raw thinking.
         judge = api.requests[1]
         assert judge['model'] == 'hermes' and judge['max_tokens'] == 160
-        assert judge['messages'][0]['content'] == JUDGE_PROMPT + '\n' + THINKING_JUDGE_NOTE
+        assert judge['messages'][0]['content'] == THINKING_JUDGE_PROMPT
         evidence = json.loads(judge['messages'][1]['content'])
         assert evidence['assistant_reply'] == 'Hello there.'
         assert evidence['conversation'] == [{'role':'system','content':HERMES['default_instruction']},

@@ -22,8 +22,10 @@
   const conversationColors = [[255, 45, 142], [138, 77, 255], [255, 174, 0], [255, 154, 107], [61, 154, 139], [196, 64, 92], [92, 112, 214], [150, 120, 60]];
   const recorded = () => data.kind === 'recordings' || data.kind === 'semantic';
   // The donut field (wash, contours, core) frames both the reference field and the semantic donut.
-  const shaped = () => data.kind === 'concept' || data.kind === 'semantic';
+  const shaped = () => data.kind === 'concept' || data.kind === 'semantic' || (!tools && data.kind === 'recordings');
   const labelNodes = [];
+  let recentIds = new Set(), pulsePoints = [], nextPulseCheck = 0;
+  const hasPath = p => !recorded() || recentIds.has(p.conversation_id);
   const labelNames = ['consent', 'intimacy', 'desire', 'erotic fiction', 'relationships', 'sexual health'];
 
   function message(text, duration = 6000) {
@@ -92,7 +94,7 @@
     const stride = Math.max(1, Math.ceil(projected.length / 25000)); drawnPoints = [];
     for (let i = 0; i < projected.length; i += stride) {
       const q = projected[i], p = q.p;
-      if (p.path && $('trails').checked) continue;
+      if ($('trails').checked && (recorded() ? hasPath(p) : p.path)) continue;
       drawnPoints.push(q);
       const alpha = clamp(0.6 - q.depth * 0.085, 0.2, 0.86) * pathOpacity(p), rad = clamp((p.radius || 1) * q.per * Math.pow(camera.zoom, 0.4), 0.4, 5);
       if (p.outcome === 'refused') {
@@ -153,8 +155,10 @@
     ctx.restore();
   }
   function pathOpacity(p) {
-    if (!recorded() || !selected) return 1;
-    if (!tools) return p.conversation_id === selected.conversation_id ? 1 : 0.22;
+    if (!recorded()) return 1;
+    if (!hasPath(p)) return 0.28;
+    if (!selected) return 1;
+    if (!tools) return p.conversation_id === selected.conversation_id ? 1 : 0.55;
     if ($('all-conversations').checked) return 1;
     if (p.conversation_id !== selected.conversation_id) return 0.16;
     return replay.reveal && p.turn_id > selected.turn_id ? 0.18 : 1;
@@ -163,7 +167,7 @@
     ctx.save();
     // Straight links pass through every measured checkpoint; no invented curved detours.
     for (const [a, b] of segments) {
-      if (!filters.has(a.outcome) || !filters.has(b.outcome)) continue;
+      if (!hasPath(a) || !filters.has(a.outcome) || !filters.has(b.outcome)) continue;
       const active = a.conversation_id === selected?.conversation_id;
       ctx.globalAlpha = Math.min(pathOpacity(a), pathOpacity(b));
       if (!tools) {
@@ -177,15 +181,29 @@
         ctx.setLineDash(active || $('all-conversations').checked ? [] : [3, 5]); curve([a, b]); ctx.stroke();
       }
       const p = project(a), q = project(b), length = Math.hypot(q.x - p.x, q.y - p.y);
-      if (active && length > 24) {
+      if (length > 12) {
         const angle = Math.atan2(q.y - p.y, q.x - p.x), x = p.x + (q.x - p.x) * 0.64, y = p.y + (q.y - p.y) * 0.64;
+        ctx.strokeStyle = '#302131'; ctx.lineWidth = active ? 2 : 1.5;
         ctx.setLineDash([]); ctx.beginPath(); ctx.moveTo(x - 6 * Math.cos(angle - 0.5), y - 6 * Math.sin(angle - 0.5)); ctx.lineTo(x, y); ctx.lineTo(x - 6 * Math.cos(angle + 0.5), y - 6 * Math.sin(angle + 0.5)); ctx.stroke();
       }
     }
     ctx.setLineDash([]);
     for (const p of data.points) {
+      if (!hasPath(p)) continue;
       ctx.globalAlpha = pathOpacity(p);
       drawPathNode(p, false);
+    }
+    ctx.restore();
+  }
+  function drawRecentActivity() {
+    if (!recorded()) return;
+    const phase = reducedMotion ? 0.4 : (Date.now() % 2200) / 2200;
+    ctx.save(); ctx.setLineDash([]);
+    for (const p of pulsePoints) {
+      if (!filters.has(p.outcome)) continue;
+      const q = project(p);
+      circle(q.x, q.y, (7 + phase * 10) * Math.sqrt(camera.zoom));
+      ctx.strokeStyle = rgba(p.color, (1 - phase) * 0.65); ctx.lineWidth = 1.8; ctx.stroke();
     }
     ctx.restore();
   }
@@ -220,13 +238,23 @@
   }
   function updateLabels() {
     for (const label of labelNodes) {
-      const q = project(label.point), hide = !filters.has(label.point.outcome) || camera.zoom > 2.2 || q.x < (width > 760 ? 240 : 18) || q.x > width - (width > 760 ? 310 : 18) || q.y < 145 || q.y > height - (width > 760 ? 170 : 360);
-      label.el.hidden = hide; label.el.style.left = `${q.x}px`; label.el.style.top = `${q.y - 10}px`; label.el.style.opacity = clamp(0.95 - q.depth * 0.1, 0.45, 1);
+      const q = project(label.point), visible = label.members ? label.members.some(p => filters.has(p.outcome)) : filters.has(label.point.outcome);
+      if (label.members && shaped() && $('core').checked) {
+        const center = project({x: 0, y: 0, z: 0}), radius = viewport.scale * camera.zoom * 0.87 * center.per;
+        const dx = q.x - center.x, dy = q.y - center.y, distance = Math.hypot(dx, dy);
+        // Keep the core lettering legible while anchoring the hint near its region.
+        if (distance < radius + 65) {
+          const angle = distance > 1 ? Math.atan2(dy, dx) : -Math.PI / 2;
+          q.x = center.x + Math.cos(angle) * (radius + 65); q.y = center.y + Math.sin(angle) * (radius + 65);
+        }
+      }
+      const hide = !visible || camera.zoom > 2.8 || q.x < 70 || q.x > width - 70 || q.y < 145 || q.y > height - 120;
+      label.el.hidden = hide; label.el.style.left = `${q.x}px`; label.el.style.top = `${q.y - 18}px`; label.el.style.opacity = label.members ? 0.36 : clamp(0.95 - q.depth * 0.1, 0.45, 1);
     }
     $('zoom-value').textContent = `${Math.round(camera.zoom * 100)}%`;
   }
   function render() {
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0); drawGrid(); drawWash(); drawCloud(); drawContours(); drawCore(); drawTrails(); drawSelection(); updateLabels(); dirty = false;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0); drawGrid(); drawWash(); drawContours(); drawCore(); drawCloud(); drawTrails(); drawRecentActivity(); drawSelection(); updateLabels(); dirty = false;
   }
   function selectPoint(p, show = true) {
     selected = p; neighbors = M.nearest(data.points, p); $('inspector').hidden = !show; $('inspector').classList.toggle('mobile-open', show); $('inspector-mobile').setAttribute('aria-expanded', String(show && width <= 760));
@@ -247,7 +275,7 @@
       $('point-coordinates').textContent = 'ILLUSTRATIVE POSITION';
       $('inspector-note').textContent = 'Art-directed example of conversation replay. Paths, responses and outcomes are invented to demonstrate the interface. No model was queried; these are not measured trajectories.';
     }
-    if (recorded() && !data.synthetic && p.label_source === 'model_judge') $('inspector-note').textContent += ` Auto-tagged by Gemma; this judgment may be wrong.${p.label_reason ? ' ' + p.label_reason : ''}`;
+    if (recorded() && !data.synthetic && p.label_source === 'model_judge') $('inspector-note').textContent += ` Automatically tagged; this judgment may be wrong.${p.label_reason ? ' ' + p.label_reason : ''}`;
     if (!tools) renderThread(p);
     if (recorded()) {
       if (replay.path[0]?.conversation_id !== p.conversation_id) {
@@ -268,7 +296,7 @@
   function nearestThread(x, y) {
     let best = (width <= 760 ? 16 : 9) ** 2, id = null;
     for (const [a, b] of segments) {
-      if (!filters.has(a.outcome) || !filters.has(b.outcome)) continue;
+      if (!$('trails').checked || !hasPath(a) || !filters.has(a.outcome) || !filters.has(b.outcome)) continue;
       const p = project(a), q = project(b), dx = q.x - p.x, dy = q.y - p.y, t = clamp(((x - p.x) * dx + (y - p.y) * dy) / (dx * dx + dy * dy || 1), 0, 1);
       const distance = (p.x + t * dx - x) ** 2 + (p.y + t * dy - y) ** 2;
       if (distance < best) { best = distance; id = a.conversation_id; }
@@ -297,10 +325,10 @@
       const item = document.createElement('li'), button = document.createElement('button'), dot = document.createElement('i');
       dot.className = `dot ${q.outcome}`; button.append(dot, document.createTextNode(String(q.turn_id + 1)));
       button.className = (q === p ? 'active' : '') + (q === moment ? ' moment-step' : ''); button.setAttribute('aria-pressed', String(q === p));
-      button.setAttribute('aria-label', `Message ${q.turn_id + 1}: ${q.outcome}${q === moment ? ', closest to the core' : ''}`);
+      button.setAttribute('aria-label', `Message ${q.turn_id + 1}: ${q.outcome}${q === moment && data.kind === 'semantic' ? ', closest to the core' : ''}`);
       button.onclick = () => selectPoint(q); item.append(button); return item;
     }));
-    $('moment-heading').textContent = p === moment && p.outcome === 'refused' ? `REFUSAL MOMENT · MESSAGE ${p.turn_id + 1}` : p === moment ? `CLOSEST TO THE CORE · MESSAGE ${p.turn_id + 1}` : `MESSAGE ${p.turn_id + 1}`;
+    $('moment-heading').textContent = p === moment && p.outcome === 'refused' ? `REFUSAL MOMENT · MESSAGE ${p.turn_id + 1}` : p === moment && data.kind === 'semantic' ? `CLOSEST TO THE CORE · MESSAGE ${p.turn_id + 1}` : `MESSAGE ${p.turn_id + 1}`;
     $('moment-dot').className = `dot ${p.outcome}`;
     $('moment-outcome').textContent = (p.outcome === 'unlabeled' ? 'Not labelled yet' : `AI ${p.outcome}`) + (p.label_source === 'model_judge' ? ' · auto-tagged' : '');
     const thinking = splitThinking(p.response).thinking;
@@ -310,6 +338,14 @@
   }
   function makeLabels() {
     $('map-labels').replaceChildren(); labelNodes.length = 0;
+    if (recorded() && !data.synthetic) {
+      for (const region of M.themeRegions(data.points)) {
+        const el = document.createElement('span'); el.className = 'theme-cloud'; el.textContent = region.name;
+        el.title = `Prompt-word theme near ${region.count} turns; an exploratory hint, not a measured model category.`;
+        $('map-labels').append(el); labelNodes.push({ ...region, el });
+      }
+      return;
+    }
     if (data.points.length < 30) return;
     for (let i = 0; i < labelNames.length; i++) {
       const theta = (i + 0.35) / 6 * TAU, anchor = M.surface(theta, -1.3);
@@ -385,6 +421,7 @@
   function loadDataset(next) {
     replay = { path: [], index: 0, playing: false, reveal: false, next: 0 };
     data = next; morph = null; segments = data.kind === 'concept' ? [] : M.conversationPaths(data.points); filters.clear(); ['answered', 'redirected', 'refused', 'unclear', 'unlabeled'].forEach(x => filters.add(x));
+    recentIds = M.recentConversations(data.points); pulsePoints = data.points.filter(p => M.isRecentPoint(p));
     $('replay').hidden = !recorded();
     $('conversation-select').replaceChildren();
     if (recorded()) for (const id of new Set(data.points.map(p => p.conversation_id))) {
@@ -394,6 +431,13 @@
     document.querySelectorAll('[data-outcome]').forEach(button => { button.hidden = !data.points.some(p => p.outcome === button.dataset.outcome); button.setAttribute('aria-pressed', 'true'); });
     $('contours').checked = shaped(); $('contours').disabled = !shaped(); $('core').checked = shaped(); $('core').disabled = !shaped(); $('texture-row').hidden = !data.texture;
     $('core-sub').textContent = data.kind === 'semantic' ? 'REFUSAL REFERENCE / VISUAL METAPHOR' : 'A CONCEPTUAL LANDMARK';
+    const measured = data.kind === 'semantic' && !data.synthetic;
+    $('map-description').textContent = measured
+      ? 'Visitors try to get an AI to talk explicitly about sex. Paths follow the latest ten conversations toward a fixed, exploratory refusal reference. Earlier conversations remain as faded dots.'
+      : recorded() && !data.synthetic
+        ? 'Live conversations in an exploratory projection. The pink donut and core are illustrative while refusal-reference labels are missing; distance to this core does not measure refusal.'
+        : 'A pink landscape of conversation and refusal. This illustrative view shows how a conversation can approach the core.';
+    $('projection-note').textContent = measured ? 'Fixed refusal reference · automatic labels can be wrong' : recorded() && !data.synthetic ? 'Live projection · illustrative core · awaiting refusal labels' : 'Illustrative conversations · no model measurements';
     $('trails').disabled = data.kind !== 'concept' && !segments.length; $('trails').checked = data.kind === 'concept' || recorded(); $('tour').disabled = data.kind !== 'concept' && !recorded();
     $('color-topic').textContent = recorded() ? 'Conversation' : 'Spectrum'; renderLayerSwitch();
     $('source-summary').textContent = data.kind === 'concept' ? 'Illustrative field · synthetic points' : data.kind === 'umap' ? 'Actual UMAP · synthetic vectors' : `Imported coordinates · ${data.synthetic === true || data.points.every(p => p.synthetic === true) ? 'synthetic' : 'user-supplied data'}`;
@@ -548,6 +592,12 @@
   });
   function frame(time) {
     const dt = Math.min((time - lastTime) / 1000, 0.05); lastTime = time;
+    if (time >= nextPulseCheck) {
+      const previousCount = pulsePoints.length;
+      pulsePoints = pulsePoints.filter(p => M.isRecentPoint(p)); nextPulseCheck = time + 1000;
+      if (previousCount !== pulsePoints.length) dirty = true;
+    }
+    if (pulsePoints.length && !reducedMotion && !document.hidden) dirty = true;
     if (autoOrbit && !document.hidden && !$('about').open) { camera.yaw += dt * 0.13; dirty = true; }
     if (replay.playing && !document.hidden && !$('about').open && time >= replay.next) {
       if (replay.index >= replay.path.length - 1) { replay.playing = false; updateReplay(); }
@@ -560,7 +610,7 @@
     if (morph) {
       const t = morph.duration ? clamp((time - morph.start) / morph.duration, 0, 1) : 1, u = t * t * (3 - 2 * t);
       data.points.forEach((p, i) => { const a = morph.from[i], b = p.positions[data.layer]; p.x = a.x + (b.x - a.x) * u; p.y = a.y + (b.y - a.y) * u; p.z = a.z + (b.z - a.z) * u; });
-      if (t === 1) { morph = null; if (selected) neighbors = M.nearest(data.points, selected); }
+      if (t === 1) { morph = null; makeLabels(); if (selected) neighbors = M.nearest(data.points, selected); }
       dirty = true;
     }
     if (transition) {
@@ -595,7 +645,7 @@
     recordingOption.textContent = source.settings?.method === 'pca_preview' ? 'Your recordings · early PCA preview' : 'Your recordings · UMAP';
     $('dataset').querySelector('[value=semantic]').hidden = !hasDonut;
     if (firstLive || ['semantic', 'recordings'].includes($('dataset').value)) {
-      const semantic = hasDonut && (firstLive || $('dataset').value === 'semantic');
+      const semantic = hasDonut && (!tools || firstLive || $('dataset').value === 'semantic');
       $('dataset').value = semantic ? 'semantic' : 'recordings';
       loadDataset(semantic ? semanticDataset() : recordingsDataset());
       if (!firstLive && data.kind === 'recordings' && data.layers.includes(previousLayer)) setLayer(previousLayer);
