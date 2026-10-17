@@ -4,12 +4,12 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#f2f0ec">
-  <title>The shape of refusal — @sextechsabrina</title>
-  <link rel="stylesheet" href="style.css?v=threads-1">
+  <title>The shape of refusal — Soft Refusal</title>
+  <link rel="stylesheet" href="style.css?v=features-1">
 </head>
 <body>
   <header class="masthead">
-    <span class="brand"><span class="brand-mark" aria-hidden="true">✳</span><span>@sextechsabrina<span class="brand-sub">SOFT REFUSAL / A LIVE MAP</span></span></span>
+    <span class="brand"><span class="brand-mark" aria-hidden="true">✳</span><span>SOFT REFUSAL</span></span>
     <div class="masthead-title">MAPPING THE SEXUAL AVOIDANCE<br>OF ARTIFICIAL INTELLIGENCE</div>
     <span class="edition"><span id="edition-text">EXPERIMENT 03</span> <span class="edition-dot">●</span></span>
   </header>
@@ -19,7 +19,6 @@
     <div class="vignette" aria-hidden="true"></div>
 
     <section class="intro">
-      <p class="eyebrow"><span class="tiny-cross">×</span> SOFT REFUSAL</p>
       <h1>THE SHAPE<br>OF REFUSAL<span class="title-period">.</span></h1>
       <p class="intro-copy research">A landscape of closeness,<br>desire, and the places<br>a model won’t go.</p>
       <p id="map-description" class="subtitle public-only">A pink landscape of conversation and refusal.</p>
@@ -36,7 +35,7 @@
       <div class="legend-row"><i class="dot refused"></i><span>AI refused</span></div>
       <div class="legend-row"><i class="legend-core" aria-hidden="true"></i><span>Refusal core</span></div>
       <p class="legend-hint">Arrows follow message order. The ten most recently active conversations keep their lines; older turns remain as faded dots. A soft halo marks turns completed in the last five minutes.</p>
-      <p class="legend-hint">Faint words name nearby prompt themes, inferred from wording. Tap a line or dot to see the AI’s generated reasoning.</p>
+      <p class="legend-hint">Faint words name nearby prompt themes, inferred from wording. Tap a line or dot to read the conversation.</p>
     </section>
 
     <section id="layers" class="layers research" aria-label="Map controls">
@@ -47,7 +46,6 @@
       <label class="toggle-row"><span>Conversation paths</span><input id="trails" type="checkbox" checked><span class="switch" aria-hidden="true"></span></label>
       <label class="toggle-row"><span>Show all conversations</span><input id="all-conversations" type="checkbox" checked><span class="switch" aria-hidden="true"></span></label>
       <label class="toggle-row"><span>Refusal core</span><input id="core" type="checkbox" checked><span class="switch" aria-hidden="true"></span></label>
-      <label class="toggle-row" id="texture-row" hidden><span>Field texture <small class="toggle-note">illustrative</small></span><input id="texture" type="checkbox" checked><span class="switch" aria-hidden="true"></span></label>
       <div class="response-filter" aria-label="Filter response types">
         <button data-outcome="answered" aria-pressed="true"><i class="dot answered"></i>Answered</button>
         <button data-outcome="redirected" aria-pressed="true"><i class="dot redirected"></i>Redirected</button>
@@ -65,7 +63,7 @@
     </div>
 
     <aside id="thread" class="thread public-only" aria-label="Selected conversation" hidden>
-      <div class="inspector-top"><span class="eyebrow">02 / ONE CONVERSATION</span><button id="close-thread" aria-label="Close conversation">×</button></div>
+      <div class="inspector-top"><span id="feature-status" class="eyebrow">ONE CONVERSATION</span><button id="close-thread" aria-label="Close conversation and pause feature loop">×</button></div>
       <div class="point-card">
         <span class="punched-hole" aria-hidden="true"></span>
         <div class="thread-head"><i id="thread-swatch" class="thread-swatch"></i><span id="thread-number" class="point-number">CONVERSATION 01</span><span id="thread-demo" class="thread-demo"></span></div>
@@ -73,8 +71,11 @@
         <div class="moment">
           <span id="moment-heading" class="eyebrow">CLOSEST TO THE CORE</span>
           <div class="point-status"><i id="moment-dot" class="dot refused"></i><span id="moment-outcome">Refused</span></div>
-          <span class="eyebrow moment-label">WHAT THE AI WAS THINKING</span>
-          <p id="moment-reasoning" class="reasoning"></p>
+          <span class="eyebrow moment-label">YOU ASKED</span>
+          <p id="moment-prompt" class="featured-prompt"></p>
+          <span class="eyebrow moment-label">AI REPLIED</span>
+          <p id="moment-answer" class="featured-answer"></p>
+          <details id="moment-thinking"><summary class="eyebrow">GENERATED REASONING</summary><p id="moment-reasoning" class="reasoning"></p></details>
         </div>
         <p id="thread-note" class="thread-note">The AI’s own reasoning before it replied. Generated text, not a full explanation of how it decides.</p>
       </div>
@@ -121,6 +122,7 @@
       <div class="zoom-controls"><button id="zoom-out" aria-label="Zoom out">−</button><span id="zoom-value">100%</span><button id="zoom-in" aria-label="Zoom in">＋</button></div>
       <span class="toolbar-divider"></span>
       <button id="orbit" aria-pressed="false"><span id="orbit-icon" aria-hidden="true">↻</span><span class="toolbar-word">Orbit</span></button>
+      <button id="feature-loop" class="public-only" aria-pressed="true" title="Feature the latest five conversations, ten seconds per message">Pause features</button>
       <button id="home" title="Reset view (R)"><span aria-hidden="true">⌖</span><span class="toolbar-word">Reset</span></button>
       <span class="toolbar-divider"></span>
       <div class="segmented view-switch"><button id="view-3d" class="active" aria-pressed="true">3D</button><button id="view-top" aria-pressed="false">Top</button></div>
@@ -140,7 +142,7 @@
     <p>The <b>3D UMAP sample</b> is an actual three-dimensional UMAP reduction of 3,900 synthetic 48-dimensional vectors. Its prompts and responses are also illustrative. No language model was queried for either sample.</p>
     <p><b>Load points</b> accepts JSON arrays, objects containing a <code>points</code> array, or JSONL, including Recording Room’s <code>points.jsonl</code>. Each point needs numeric <code>x</code>, <code>y</code>, and <code>z</code>. Optional prompt, topic, outcome, conversation, and previous-point fields appear when supplied. Imported coordinates are centered and uniformly scaled; they are never warped into the reference shape. Your file stays in this browser.</p>
     <p><b>Your recordings · donut</b> uses a fixed reference fitted from answered and refused turns. New exports reuse its direction, angular basis and vertical scale, so existing states stay in place. Radius smoothly compresses the reference score into the chosen sphere-and-donut geometry; it is not a probability. Angle describes remaining internal-state variation, not a validated topic label. Changing response labels updates markers without moving points. Redirection alone does not define the core. Older exports without a reference badge retain their original exploratory coordinates.</p>
-    <p><b>Follow a conversation</b> selects a coloured path. Play, pause, step or scrub through its turns; future turns stay faint until reached. Arrows join recorded checkpoints directly. They do not show measured motion between turns. The sphere and field texture are illustrative; approaching the sphere does not establish a causal refusal mechanism.</p>
+    <p>The five newest conversations are featured automatically, one turn every ten seconds. Use <b>Pause features</b> to read at your own pace. Only recorded points appear in the live map. Arrows join recorded checkpoints directly; they do not show measured motion between turns. The donut surface and core are illustrative; approaching the core does not establish a causal refusal mechanism.</p>
     <p><b>Your recordings · UMAP</b> shows the selected model’s state before each reply, with a separate projection for each layer. The hosted service refits UMAP after completed turns, so existing points can move. The fixed-reference donut stays stable instead. Fewer than six distinct states use a PCA preview. Until answered/refused anchors exist, the public viewer keeps the pink donut as an illustrative backdrop; proximity to that core does not measure refusal.</p>
     <p><b>Theme clouds</b> are local prompt-word hints near groups of related turns, not discovered labels for the model’s internal axes. Only the ten most recently active conversations have lines. Older points stay visible and selectable. New turns carry a five-minute halo; reduced-motion mode uses a still halo. Older recordings without completion timestamps are not marked as new.</p>
     <p>UMAP axes have no intrinsic meaning. Nearby points in the projection are not proof of a shared cause of refusal. Neighbors here are measured in the displayed 3D coordinates.</p>
@@ -150,7 +152,7 @@
   <script src="data/sample-umap.js"></script>
   <script src="data/path-study.js"></script>
   <script src="data/recordings.js"></script>
-  <script src="cloud.js"></script>
-  <script src="app.js?v=threads-1"></script>
+  <script src="cloud.js?v=features-1"></script>
+  <script src="app.js?v=features-1"></script>
 </body>
 </html>

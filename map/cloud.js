@@ -120,6 +120,9 @@
     }
     return new Set([...groups].sort((a, b) => b[1].time - a[1].time || b[1].number - a[1].number || String(a[0]).localeCompare(String(b[0]))).slice(0, count).map(([id]) => id));
   }
+  function featuredTurns(points, count = 5) {
+    return [...recentConversations(points, count)].flatMap(id => conversationPath(points, id));
+  }
   // Local prompt-word hints, not a claim that model activations have named semantic axes.
   function themeRegions(points) {
     const themes = [
@@ -156,5 +159,5 @@
     const per = 8 / Math.max(0.4, 8 + depth), scale = viewport.scale * camera.zoom;
     return { x: viewport.cx + xx * per * scale + camera.pan.x, y: viewport.cy - yy * per * scale + camera.pan.y, depth, per };
   }
-  root.CloudMath = { TAU, clamp, rng, surface, makeConcept, normalizePoints, recordingPositions, parseFile, conversationPaths, conversationPath, conversationColorIndex, semanticPosition, nearest, project, topics, pointTime, isRecentPoint, recentConversations, themeRegions };
+  root.CloudMath = { TAU, clamp, rng, surface, makeConcept, normalizePoints, recordingPositions, parseFile, conversationPaths, conversationPath, conversationColorIndex, semanticPosition, nearest, project, topics, pointTime, isRecentPoint, recentConversations, featuredTurns, themeRegions };
 })(typeof window !== 'undefined' ? window : globalThis);

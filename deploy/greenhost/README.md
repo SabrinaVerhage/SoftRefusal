@@ -84,7 +84,7 @@ Visitors explicitly agree that completed prompts and replies appear on the publi
 
 The map starts with a clearly marked illustrative view. Actual recorded turns replace it automatically. Fewer than six distinct turns use a labeled PCA preview; UMAP starts once there is sufficient data. The fixed refusal-centered view also requires suitable answered/refused labels; it is unavailable until those exist. A failed map rebuild retains the previous map and all recordings.
 
-The public map shows each conversation as a line, a legend and, for a selected line, the AI's thinking at its refusal moment (or its turn closest to the core). It does not show prompts or replies. Add `?tools` to the map URL for the research controls: datasets, layers, filters, search and replay.
+The public map draws only recorded points, with paths for the ten newest conversations and a pink illustrative donut and core. It orbits automatically unless reduced motion is requested. The five newest conversations play in a continuous feature loop: each recorded turn shows its prompt and AI reply for ten seconds, with generated reasoning available to expand. **Pause features** stops the loop for reading; selecting or moving around the map also pauses it. Live updates preserve the current feature when it remains in the newest five. Add `?tools` to the map URL for the research controls: datasets, layers, filters, search and replay.
 
 The GPU must be online for new replies. Hosting does not start, renew, or stop GPU billing. No periodic recording backup is configured by this deployment.
 

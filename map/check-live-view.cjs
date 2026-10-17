@@ -12,11 +12,14 @@ const {chromium} = require('playwright');
     const errors = []; page.on('pageerror', e => errors.push(e.message));
     // Count the renderer's two-arm arrowheads, independently of selection.
     await page.addInitScript(() => {
+      // A checkout may contain ignored private exports; keep this check self-contained.
+      Object.defineProperty(window,'RECORDINGS',{configurable:true,get:()=>undefined,set:()=>{}});
       const proto = CanvasRenderingContext2D.prototype;
-      for (const name of ['setTransform','beginPath','moveTo','lineTo','stroke']) {
+      for (const name of ['setTransform','beginPath','moveTo','lineTo','stroke','arc']) {
         const original = proto[name];
         proto[name] = function(...args) {
-          if (name === 'setTransform') window.testArrows = 0;
+          if (name === 'setTransform') { window.testArrows = 0; window.testCircles = 0; }
+          if (name === 'arc') window.testCircles++;
           if (name === 'beginPath') this.testPath = [];
           if (name === 'moveTo' || name === 'lineTo') (this.testPath ||= []).push(args);
           if (name === 'stroke' && this.testPath?.length === 3) {
@@ -27,8 +30,14 @@ const {chromium} = require('playwright');
         };
       }
     });
+    await page.clock.install();
     await page.goto(pathToFileURL(path.join(__dirname,'index.html')).href);
+    assert.equal((await page.locator('.brand').textContent()).trim(), '✳SOFT REFUSAL');
+    assert.equal(await page.locator('.brand-sub,.intro>.eyebrow').count(),0);
+    assert.match(await page.locator('#point-count').textContent(),/WAITING/);
+    assert.equal(await page.locator('#orbit').getAttribute('aria-pressed'),'false'); // Reduced motion.
     await page.evaluate(() => {
+      delete window.RECORDINGS;
       // Mimics the live payload shape; every point is an authored test fixture.
       const points = Array.from({length:24},(_,i) => ({point_id:`fixture-${i}`,conversation_id:`c${Math.floor(i/2)}`,conversation_number:Math.floor(i/2)+1,
         turn_id:i%2,previous_point_id:i%2?`fixture-${i-1}`:null,core_score:i%2?.65:-.2,angle:Math.floor(i/2)/12*Math.PI*2,lift:0,
@@ -38,9 +47,27 @@ const {chromium} = require('playwright');
       window.dispatchEvent(new CustomEvent('softrefusal:recordings',{detail:window.fixturePayload}));
     });
     await page.waitForFunction(() => window.testArrows === 10);
+    assert(await page.evaluate(()=>window.testCircles<100)); // No synthetic field texture.
     assert(await page.locator('#core-label').isVisible());
     assert(await page.locator('.theme-cloud').count() > 0);
     assert.match(await page.locator('#projection-note').textContent(),/Fixed refusal reference/);
+    assert.match(await page.locator('#feature-status').textContent(),/FEATURED 1 \/ 5 · MESSAGE 1 \/ 2/);
+    assert.equal(await page.locator('#moment-answer').textContent(),'Fixture answer.');
+    await page.clock.runFor(10500);
+    assert.match(await page.locator('#feature-status').textContent(),/MESSAGE 2 \/ 2/);
+    await page.evaluate(()=>window.dispatchEvent(new CustomEvent('softrefusal:recordings',{detail:window.fixturePayload})));
+    assert.match(await page.locator('#feature-status').textContent(),/FEATURED 1 \/ 5 · MESSAGE 2 \/ 2/);
+    await page.clock.runFor(10000);
+    assert.match(await page.locator('#feature-status').textContent(),/FEATURED 2 \/ 5 · MESSAGE 1 \/ 2/);
+    await page.locator('#feature-loop').click();
+    const paused=await page.locator('#thread').getAttribute('data-point-id');
+    await page.evaluate(()=>window.dispatchEvent(new CustomEvent('softrefusal:recordings',{detail:window.fixturePayload})));
+    assert.equal(await page.locator('#feature-loop').getAttribute('aria-pressed'),'false');
+    await page.clock.runFor(11000);
+    assert.equal(await page.locator('#thread').getAttribute('data-point-id'),paused);
+    await page.locator('#feature-loop').click();
+    await page.clock.runFor(80500);
+    assert.match(await page.locator('#feature-status').textContent(),/FEATURED 1 \/ 5 · MESSAGE 1 \/ 2/);
     const out=path.join(__dirname,'runtime');fs.mkdirSync(out,{recursive:true});
     await page.screenshot({path:path.join(out,'final-map-desktop.png')});
     await page.evaluate(() => {
@@ -54,6 +81,11 @@ const {chromium} = require('playwright');
     await page.screenshot({path:path.join(out,'final-map-mobile.png')});
     await page.evaluate(() => window.dispatchEvent(new CustomEvent('softrefusal:recordings',{detail:window.fixturePayload})));
     assert.match(await page.locator('#projection-note').textContent(),/Fixed refusal reference/);
+
+    const orbitPage=await browser.newPage({viewport:{width:1440,height:1000},reducedMotion:'no-preference'});
+    await orbitPage.goto(pathToFileURL(path.join(__dirname,'index.html')).href);
+    assert.equal(await orbitPage.locator('#orbit').getAttribute('aria-pressed'),'true');
+    await orbitPage.close();
 
     const phone = await browser.newPage({viewport:{width:390,height:844},isMobile:true,hasTouch:true});
     phone.on('pageerror',e=>errors.push(e.message));
@@ -82,6 +114,6 @@ const {chromium} = require('playwright');
     assert(await phone.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
     await phone.screenshot({path:path.join(out,'final-phone-mobile.png')});
     assert.deepEqual(errors,[]);
-    console.log('Passed: ten newest paths, unselected arrows, theme labels, donut fallback, mobile layout, removed links, sent-message display and automatic reply scrolling.');
+    console.log('Passed: branding, default orbit, real points only, five-conversation loop, ten-second steps, pause/resume, refresh preservation, latest paths, arrows, themes, donut fallback, mobile layout and phone scrolling.');
   } finally {await browser.close();}
 })().catch(error=>{console.error(error);process.exitCode=1;});

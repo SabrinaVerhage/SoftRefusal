@@ -16,6 +16,7 @@
   const pointers = new Map();
   let drag = null, pinch = null, hoveredThread = null;
   let replay = { path: [], index: 0, playing: false, reveal: false, next: 0 };
+  let featureEnabled = !tools, featurePoints = [], featureId = null, featureElapsed = 0;
   const colors = { answered: [234, 110, 165], redirected: [231, 151, 101], refused: [157, 119, 198], unclear: [142, 130, 125], unlabeled: [142, 130, 125] };
   const topicColors = { consent: '#f3cfac', intimacy: '#efadbe', desire: '#eeadd1', 'erotic fiction': '#c9a7df', relationships: '#edb5ba', 'sexual health': '#f1c4a6', unclassified: '#d7ccc0' };
   // One brand pigment per recorded conversation (pleasure, curiosity, energy, peach, then extras).
@@ -59,9 +60,6 @@
   const contourLines = Array.from({ length: 22 }, (_, j) => Array.from({ length: 190 }, (_, i) => { const theta = i / 190 * TAU, phi = -Math.PI + (j + 0.5) / 22 * Math.PI; return M.surface(theta, phi + 0.32 * Math.sin(theta * 3 + phi * 2) * Math.sin(-phi)); }));
   function drawGrid() {
     ctx.fillStyle = '#f2f0ec'; ctx.fillRect(0, 0, width, height);
-    ctx.fillStyle = '#b9aaa0'; ctx.globalAlpha = 0.19;
-    for (let x = 18; x < width; x += 23) for (let y = 15; y < height; y += 23) ctx.fillRect(x, y, 0.65, 0.65);
-    ctx.globalAlpha = 1;
   }
   function drawWash() {
     if (!shaped() || !$('contours').checked) return;
@@ -78,16 +76,7 @@
     curve(outer, true); ctx.strokeStyle = '#171216'; ctx.lineWidth = 1.7; ctx.stroke();
     curve(inner, true); ctx.strokeStyle = '#291c2780'; ctx.lineWidth = 0.7; ctx.stroke();
   }
-  function drawTexture() {
-    if (!data.texture || !$('texture').checked) return;
-    // Illustrative dust from the reference field: never selectable, never searched.
-    for (const p of data.texture) {
-      const q = project(p); if (q.x < -20 || q.x > width + 20 || q.y < -20 || q.y > height + 20) continue;
-      circle(q.x, q.y, clamp(p.radius * q.per * Math.pow(camera.zoom, 0.4), 0.4, 3)); ctx.fillStyle = rgba(p.textureColor, clamp(0.55 - q.depth * 0.07, 0.18, 0.7) * (selected && recorded() ? 0.3 : 1)); ctx.fill();
-    }
-  }
   function drawCloud() {
-    drawTexture();
     projected = data.points.map(p => ({ ...project(p), p })).filter(q => filters.has(q.p.outcome) && q.x > -20 && q.x < width + 20 && q.y > -20 && q.y < height + 20);
     projected.sort((a, b) => b.depth - a.depth);
     // Stay responsive with imported large clouds; the full data remains searchable.
@@ -326,15 +315,43 @@
       dot.className = `dot ${q.outcome}`; button.append(dot, document.createTextNode(String(q.turn_id + 1)));
       button.className = (q === p ? 'active' : '') + (q === moment ? ' moment-step' : ''); button.setAttribute('aria-pressed', String(q === p));
       button.setAttribute('aria-label', `Message ${q.turn_id + 1}: ${q.outcome}${q === moment && data.kind === 'semantic' ? ', closest to the core' : ''}`);
-      button.onclick = () => selectPoint(q); item.append(button); return item;
+      button.onclick = () => { pauseFeatures(); selectPoint(q); }; item.append(button); return item;
     }));
     $('moment-heading').textContent = p === moment && p.outcome === 'refused' ? `REFUSAL MOMENT · MESSAGE ${p.turn_id + 1}` : p === moment && data.kind === 'semantic' ? `CLOSEST TO THE CORE · MESSAGE ${p.turn_id + 1}` : `MESSAGE ${p.turn_id + 1}`;
     $('moment-dot').className = `dot ${p.outcome}`;
     $('moment-outcome').textContent = (p.outcome === 'unlabeled' ? 'Not labelled yet' : `AI ${p.outcome}`) + (p.label_source === 'model_judge' ? ' · auto-tagged' : '');
-    const thinking = splitThinking(p.response).thinking;
+    const {thinking, answer} = splitThinking(p.response);
+    $('moment-prompt').textContent = p.prompt;
+    $('moment-answer').textContent = answer || 'No final answer was recorded.';
+    if (card.dataset.pointId !== p.point_id) { $('moment-thinking').open = false; card.scrollTop = 0; }
+    card.dataset.pointId = p.point_id;
+    $('moment-thinking').hidden = !thinking;
     $('moment-reasoning').textContent = thinking || 'No reasoning was recorded for this message. Conversations from before the AI wrote down its thinking only show where they went on the map.';
     $('moment-reasoning').classList.toggle('empty', !thinking);
     $('thread-note').hidden = !thinking;
+    const ids = [...new Set(featurePoints.map(point => point.conversation_id))];
+    $('feature-status').textContent = featureEnabled && ids.includes(p.conversation_id)
+      ? `FEATURED ${ids.indexOf(p.conversation_id) + 1} / ${ids.length} · MESSAGE ${p.turn_id + 1} / ${path.length}` : 'ONE CONVERSATION';
+  }
+  function updateFeatureControl() {
+    $('feature-loop').setAttribute('aria-pressed', String(featureEnabled));
+    $('feature-loop').textContent = featureEnabled ? 'Pause features' : 'Play features';
+    $('feature-loop').disabled = !featurePoints.length;
+  }
+  function pauseFeatures() {
+    featureEnabled = false; updateFeatureControl();
+    $('feature-status').textContent = 'ONE CONVERSATION · PAUSED';
+  }
+  function showFeatured() {
+    const point = featurePoints.find(p => p.point_id === featureId) || featurePoints[0];
+    if (!point) return;
+    featureId = point.point_id; selectPoint(point);
+  }
+  function syncFeatures() {
+    featurePoints = !tools && recorded() && !data.synthetic ? M.featuredTurns(data.points) : [];
+    if (!featurePoints.some(p => p.point_id === featureId)) { featureId = featurePoints[0]?.point_id; featureElapsed = 0; }
+    updateFeatureControl();
+    if (featureEnabled) showFeatured();
   }
   function makeLabels() {
     $('map-labels').replaceChildren(); labelNodes.length = 0;
@@ -354,7 +371,8 @@
       const el = document.createElement('span'); el.className = 'map-chip'; el.textContent = labelNames[i]; el.style.background = topicColors[labelNames[i]]; $('map-labels').append(el); labelNodes.push({ el, point });
     }
   }
-  function stopMotion() {
+  function stopMotion(pauseFeature = true) {
+    if (pauseFeature) pauseFeatures();
     replay.playing = false;
     autoOrbit = false; tour = null; transition = null; $('orbit').setAttribute('aria-pressed', 'false'); $('tour').setAttribute('aria-pressed', 'false'); $('tour').firstChild.textContent = 'Follow a path '; $('orbit-icon').textContent = '↻';
     updateReplay();
@@ -362,8 +380,8 @@
   function moveCamera(to, duration = 800) {
     transition = { from: { yaw: camera.yaw, pitch: camera.pitch, zoom: camera.zoom, target: { ...camera.target }, pan: { ...camera.pan } }, to, start: performance.now(), duration: reducedMotion ? 0 : duration }; dirty = true;
   }
-  function reset(animate = true) {
-    stopMotion(); setViewButtons('3d');
+  function reset(animate = true, pauseFeature = true) {
+    stopMotion(pauseFeature); setViewButtons('3d');
     const to = { yaw: -0.18, pitch: 0.38, zoom: 1, target: { x: 0, y: 0, z: 0 }, pan: { x: 0, y: 0 } };
     if (animate) moveCamera(to); else Object.assign(camera, to);
     dirty = true;
@@ -387,8 +405,7 @@
       return { ...p, ...position, outcome: known.has(p.outcome) ? p.outcome : 'unlabeled', path: true, radius: 2, tone: (i * 0.618) % 1 };
     });
     const paths = [...new Set(points.map(p => p.conversation_id))].map(id => points.filter(p => p.conversation_id === id).sort((a, b) => a.turn_id - b.turn_id));
-    const texture = concept.points.filter(p => !p.path); for (const p of texture) p.textureColor = p.textureColor || spectrum(p);
-    return { ...source, kind: 'semantic', points, paths, texture, layer: source.semantic.layer };
+    return { ...source, kind: 'semantic', points, paths, layer: source.semantic.layer };
   }
   function recordingText() {
     if (recorded() && data.synthetic) {
@@ -419,6 +436,7 @@
     renderLayerSwitch(); recordingText(); if (selected) selectPoint(selected, !$('inspector').hidden);
   }
   function loadDataset(next) {
+    const wasOrbiting = autoOrbit;
     replay = { path: [], index: 0, playing: false, reveal: false, next: 0 };
     data = next; morph = null; segments = data.kind === 'concept' ? [] : M.conversationPaths(data.points); filters.clear(); ['answered', 'redirected', 'refused', 'unclear', 'unlabeled'].forEach(x => filters.add(x));
     recentIds = M.recentConversations(data.points); pulsePoints = data.points.filter(p => M.isRecentPoint(p));
@@ -429,7 +447,7 @@
       option.value = id; option.textContent = `${p.conversation_number} · ${p.conversation_title || p.prompt}`; $('conversation-select').append(option);
     }
     document.querySelectorAll('[data-outcome]').forEach(button => { button.hidden = !data.points.some(p => p.outcome === button.dataset.outcome); button.setAttribute('aria-pressed', 'true'); });
-    $('contours').checked = shaped(); $('contours').disabled = !shaped(); $('core').checked = shaped(); $('core').disabled = !shaped(); $('texture-row').hidden = !data.texture;
+    $('contours').checked = shaped(); $('contours').disabled = !shaped(); $('core').checked = shaped(); $('core').disabled = !shaped();
     $('core-sub').textContent = data.kind === 'semantic' ? 'REFUSAL REFERENCE / VISUAL METAPHOR' : 'A CONCEPTUAL LANDMARK';
     const measured = data.kind === 'semantic' && !data.synthetic;
     $('map-description').textContent = measured
@@ -443,10 +461,16 @@
     $('source-summary').textContent = data.kind === 'concept' ? 'Illustrative field · synthetic points' : data.kind === 'umap' ? 'Actual UMAP · synthetic vectors' : `Imported coordinates · ${data.synthetic === true || data.points.every(p => p.synthetic === true) ? 'synthetic' : 'user-supplied data'}`;
     $('point-count').textContent = `${data.points.length.toLocaleString('en-US')} POINTS / ${data.kind === 'concept' ? 'SYNTHETIC FIELD' : data.kind === 'umap' ? '3D UMAP · SYNTHETIC VECTORS' : 'IMPORTED COORDINATES'}`;
     $('search').value = ''; $('search-results').hidden = true; hovered = null; $('hover-label').hidden = true;
-    recordingText(); showNeighbors = false; $('neighbors').setAttribute('aria-pressed', 'false'); $('neighbors').lastElementChild.textContent = '＋'; recolor(); makeLabels(); reset(false);
+    recordingText(); showNeighbors = false; $('neighbors').setAttribute('aria-pressed', 'false'); $('neighbors').lastElementChild.textContent = '＋'; recolor(); makeLabels(); reset(false, false); setOrbit(wasOrbiting);
     if (!tools) clearThread();
     else selectPoint(data.kind === 'semantic' ? data.points.reduce((a, b) => b.core_score > a.core_score ? b : a) : data.kind === 'concept' ? data.points.find(p => p.topic === 'intimacy' && p.prompt === 'How do I talk about desire without feeling ashamed?' && p.z < -0.3) || data.points[142] : data.points[0]);
     $('inspector').classList.remove('mobile-open'); $('inspector-mobile').setAttribute('aria-expanded', 'false');
+    if (!data.points.length) {
+      $('point-count').textContent = 'WAITING FOR RECORDED CONVERSATIONS';
+      $('projection-note').textContent = 'No recorded turns loaded yet';
+      $('map-description').textContent = 'A landscape for real conversations. Recorded turns will appear here as they become available.';
+    }
+    syncFeatures();
   }
   function nearestScreen(x, y) {
     let candidate = null, best = width <= 760 ? 18 * 18 : 11 * 11;
@@ -539,7 +563,12 @@
   $('zoom-in').onclick = () => zoom(1.2); $('zoom-out').onclick = () => zoom(1 / 1.2); $('home').onclick = () => reset(); $('focus-point').onclick = focusPoint;
   $('view-top').onclick = () => { stopMotion(); setViewButtons('top'); moveCamera({ yaw: 0, pitch: 0, target: { x: 0, y: 0, z: 0 }, pan: { x: 0, y: 0 }, zoom: 1 }); };
   $('view-3d').onclick = () => reset();
-  $('orbit').onclick = () => { const next = !autoOrbit; stopMotion(); autoOrbit = next; $('orbit').setAttribute('aria-pressed', String(next)); $('orbit-icon').textContent = next ? 'Ⅱ' : '↻'; };
+  function setOrbit(enabled) { autoOrbit = enabled; $('orbit').setAttribute('aria-pressed', String(enabled)); $('orbit-icon').textContent = enabled ? 'Ⅱ' : '↻'; }
+  $('orbit').onclick = () => { const next = !autoOrbit; stopMotion(false); setOrbit(next); };
+  $('feature-loop').onclick = () => {
+    if (featureEnabled) pauseFeatures();
+    else { featureEnabled = true; featureElapsed = 0; updateFeatureControl(); showFeatured(); }
+  };
   $('tour').onclick = () => {
     if (recorded()) { toggleReplay(); return; }
     if (tour) { stopMotion(); dirty = true; return; }
@@ -549,12 +578,12 @@
     tour = { path, index: -1, next: 0 }; $('tour').setAttribute('aria-pressed', 'true');
   };
   $('neighbors').onclick = () => { showNeighbors = !showNeighbors; $('neighbors').setAttribute('aria-pressed', String(showNeighbors)); $('neighbors').lastElementChild.textContent = showNeighbors ? '−' : '＋'; dirty = true; };
-  $('close-thread').onclick = clearThread;
-  $('legend-mobile').onclick = () => { const open = $('legend').classList.toggle('mobile-open'); $('legend-mobile').setAttribute('aria-expanded', String(open)); if (open) clearThread(); };
+  $('close-thread').onclick = () => { pauseFeatures(); clearThread(); };
+  $('legend-mobile').onclick = () => { const open = $('legend').classList.toggle('mobile-open'); $('legend-mobile').setAttribute('aria-expanded', String(open)); if (open) { pauseFeatures(); clearThread(); } };
   $('close-inspector').onclick = () => { $('inspector').hidden = true; $('inspector').classList.remove('mobile-open'); $('inspector-mobile').setAttribute('aria-expanded', 'false'); };
   $('layers-mobile').onclick = () => { const open = $('layers').classList.toggle('mobile-open'); $('layers-mobile').setAttribute('aria-expanded', String(open)); if (open) { $('inspector').classList.remove('mobile-open'); $('inspector-mobile').setAttribute('aria-expanded', 'false'); } };
   $('inspector-mobile').onclick = () => { const open = !$('inspector').classList.contains('mobile-open'); $('inspector').hidden = false; $('inspector').classList.toggle('mobile-open', open); $('inspector-mobile').setAttribute('aria-expanded', String(open)); if (open) { $('layers').classList.remove('mobile-open'); $('layers-mobile').setAttribute('aria-expanded', 'false'); } };
-  ['contours', 'trails', 'core', 'texture'].forEach(id => { $(id).onchange = () => { if (id === 'trails' && !$('trails').checked) stopMotion(); dirty = true; }; });
+  ['contours', 'trails', 'core'].forEach(id => { $(id).onchange = () => { if (id === 'trails' && !$('trails').checked) stopMotion(); dirty = true; }; });
   ['topic', 'response'].forEach(mode => { $(`color-${mode === 'response' ? 'outcome' : mode}`).onclick = () => { colorMode = mode; $('color-topic').classList.toggle('active', mode === 'topic'); $('color-outcome').classList.toggle('active', mode === 'response'); $('color-topic').setAttribute('aria-pressed', String(mode === 'topic')); $('color-outcome').setAttribute('aria-pressed', String(mode === 'response')); recolor(); }; });
   document.querySelectorAll('[data-outcome]').forEach(b => { b.onclick = () => { const outcome = b.dataset.outcome; if (filters.has(outcome)) filters.delete(outcome); else filters.add(outcome); b.setAttribute('aria-pressed', String(filters.has(outcome))); dirty = true; updateSearch(); updateReplay(); }; });
   $('search').addEventListener('input', updateSearch);
@@ -591,7 +620,15 @@
     } else if (e.key === '+' || e.key === '=') { e.preventDefault(); zoom(1.15); } else if (e.key === '-') { e.preventDefault(); zoom(1 / 1.15); } else if (e.key.toLowerCase() === 'r') reset(); else if (e.key.toLowerCase() === 'f') focusPoint();
   });
   function frame(time) {
-    const dt = Math.min((time - lastTime) / 1000, 0.05); lastTime = time;
+    const elapsed = Math.max(0, (time - lastTime) / 1000), dt = Math.min(elapsed, 0.05); lastTime = time;
+    if (featureEnabled && featurePoints.length && !document.hidden && !$('about').open) {
+      featureElapsed += elapsed;
+      if (featureElapsed >= 10) {
+        const index = featurePoints.findIndex(p => p.point_id === featureId);
+        featureId = featurePoints[(index + 1) % featurePoints.length].point_id;
+        featureElapsed %= 10; showFeatured();
+      }
+    }
     if (time >= nextPulseCheck) {
       const previousCount = pulsePoints.length;
       pulsePoints = pulsePoints.filter(p => M.isRecentPoint(p)); nextPulseCheck = time + 1000;
@@ -626,11 +663,12 @@
   const donut = window.RECORDINGS?.semantic && !window.RECORDINGS.semantic.unavailable;
   if (window.RECORDINGS) $('dataset').querySelector('[value=recordings]').hidden = false;
   if (donut) $('dataset').querySelector('[value=semantic]').hidden = false;
-  if (window.PATH_STUDY && new URLSearchParams(location.search).has('study')) { $('dataset').value = 'study'; loadDataset(semanticDataset(window.PATH_STUDY)); }
+  if (tools && window.PATH_STUDY && new URLSearchParams(location.search).has('study')) { $('dataset').value = 'study'; loadDataset(semanticDataset(window.PATH_STUDY)); }
   else if (donut) { $('dataset').value = 'semantic'; loadDataset(semanticDataset()); }
   else if (window.RECORDINGS) { $('dataset').value = 'recordings'; loadDataset(recordingsDataset()); message(`No donut yet: ${window.RECORDINGS.semantic?.unavailable || 'rebuild the map with Update Map from Recordings.'}`, 12000); }
-  else if (!tools && window.PATH_STUDY) { $('dataset').value = 'study'; loadDataset(semanticDataset(window.PATH_STUDY)); }
+  else if (!tools) loadDataset({ ...concept, points: [], paths: [] });
   else loadDataset(concept);
+  setOrbit(!tools && !reducedMotion);
   window.addEventListener('softrefusal:recordings', event => {
     const source = event.detail;
     if (!source?.points?.length) return;
@@ -652,9 +690,11 @@
       if (!firstLive) Object.assign(camera, previousCamera);
       const conversation = new URLSearchParams(location.search).get('conversation');
       const point = data.points.find(p => p.point_id === selectedId) || data.points.find(p => p.conversation_id === conversation);
-      if (point) selectPoint(!tools && !selectedId ? threadMoment(point.conversation_id) : point); else if (!tools) clearThread();
+      if (featureEnabled) showFeatured();
+      else if (point) selectPoint(!tools && !selectedId ? threadMoment(point.conversation_id) : point); else if (!tools) clearThread();
       dirty = true;
     }
   });
+  document.addEventListener('visibilitychange', () => { lastTime = performance.now(); });
   requestAnimationFrame(frame);
 })();

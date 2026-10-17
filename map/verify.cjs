@@ -14,6 +14,11 @@ assert.deepEqual([...M.recentConversations(history)], ['c11','c10','c9','c8','c7
 history.push({conversation_id: 'c0', conversation_number: 1, completed_utc: '2026-10-17T11:59:00Z'});
 assert(M.recentConversations(history).has('c0'));
 assert(!M.recentConversations(history).has('c2'));
+const featuredFixture = Array.from({length:7}, (_,i)=>[2,0,1].map(turn_id=>({conversation_id:`thread${i}`,conversation_number:i+1,turn_id}))).flat();
+const featured = M.featuredTurns(featuredFixture);
+assert.deepEqual([...new Set(featured.map(p=>p.conversation_id))], ['thread6','thread5','thread4','thread3','thread2']);
+assert.deepEqual(featured.slice(0,3).map(p=>p.turn_id),[0,1,2]);
+assert.deepEqual(M.featuredTurns([]),[]);
 const themed = [{x:0,y:0,z:0,prompt:'A romantic kiss'}, {x:.2,y:.1,z:0,prompt:'A tender kiss'}, {x:5,y:5,z:5,prompt:'Distant romance'}];
 const regions = M.themeRegions(themed);
 assert.equal(regions[0].name, 'romance & intimacy');
