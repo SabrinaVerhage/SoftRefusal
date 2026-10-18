@@ -59,7 +59,7 @@ const {chromium} = require('playwright');
       const canvas=document.getElementById('cloud'),box=canvas.getBoundingClientRect(),ctx=canvas.getContext('2d');
       const camera={yaw:-.18,pitch:.38,zoom:1,target:{x:0,y:0,z:0},pan:{x:0,y:0}};
       const viewport={cx:box.width*.51,cy:box.height*.445,scale:Math.min((box.width-470)/6.8,box.height*.127)};
-      return field.rings[12].filter((_,i)=>i%8===0).every(p=>{
+      return field.rings[12].filter((_,i)=>i%(field.inner.length/20)===0).every(p=>{
         const q=M.project(p,camera,viewport);
         return [[-2,-2],[-2,2],[2,-2],[2,2]].some(([dx,dy])=>{
           const [r,g,b]=ctx.getImageData(Math.round(q.x+dx),Math.round(q.y+dy),1,1).data;

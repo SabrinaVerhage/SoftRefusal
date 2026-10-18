@@ -85,6 +85,22 @@ const trail=M.surfaceTrail(from,to,field);
 assert.equal(trail[0],from);assert.equal(trail.at(-1),to);
 assert(trail.slice(1).every((p,i)=>Math.hypot(p.x,p.y)<=Math.hypot(trail[i].x,trail[i].y)+1e-12));
 assert(trail.every(p=>p.z===field.heightAt(p.x,p.y)));
+// Same angular profile and outline; only the nearby real pebble changes spacing.
+const pebble={x:2,y:0,z:0},pebbleBefore={...pebble};
+const flowed=M.makeLandscape([pebble]),undisturbed=M.makeLandscape([{x:20,y:0,z:0}]);
+assert.deepEqual(pebble,pebbleBefore);
+for(let i=0;i<flowed.inner.length;i++){
+  for(const edge of ['inner','outer'])assert(Math.hypot(flowed[edge][i].x-undisturbed[edge][i].x,flowed[edge][i].y-undisturbed[edge][i].y)<1e-12);
+  for(let j=1;j<flowed.rings.length;j++)assert(Math.hypot(flowed.rings[j][i].x,flowed.rings[j][i].y)>Math.hypot(flowed.rings[j-1][i].x,flowed.rings[j-1][i].y));
+}
+const gapNearPebble=f=>Math.max(...f.rings.slice(1).map((ring,j)=>{
+  const r=Math.hypot(ring[0].x,ring[0].y),previous=Math.hypot(f.rings[j][0].x,f.rings[j][0].y);
+  return r>1.7&&previous<2.3?r-previous:0;
+}));
+assert(gapNearPebble(flowed)>gapNearPebble(undisturbed)*1.5);
+assert(flowed.heightAt(2,0)>undisturbed.heightAt(2,0));
+const opposite=flowed.inner.length/2;
+for(let j=0;j<flowed.rings.length;j++)assert(Math.abs(flowed.rings[j][opposite].x-undisturbed.rings[j][opposite].x)<1e-10);
 assert.equal(M.themeRegions([{point_id:'a',x:1,y:1,z:0}],{regions:[{name:'one real turn',point_ids:['a','missing']}]} )[0].count,1);
 assert(scorePoints.every(p => Object.values(p).every(Number.isFinite)));
 assert(scorePoints.slice(1).every((p, i) => Math.hypot(p.x, p.y) < Math.hypot(scorePoints[i].x, scorePoints[i].y)));

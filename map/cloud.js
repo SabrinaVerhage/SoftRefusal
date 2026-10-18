@@ -194,7 +194,8 @@
   }
   function makeLandscape(points) {
     // One annular surface supplies BOTH pigment and contour vertices. Its soft
-    // lobes follow the angular density of actual turns; it is illustrative relief.
+    // lobes follow actual turns. A positive spacing field lets the contours part
+    // around each real marker without crossing or moving its topic/refusal lane.
     const bins = 96, profile = new Float64Array(bins), stride = Math.max(1, Math.ceil(points.length / 2000));
     for (let k = 0; k < points.length; k += stride) {
       const angle = Math.atan2(points[k].y, points[k].x);
@@ -210,13 +211,62 @@
     };
     const bounds = angle => ({inner: 0.98 + 0.07 * Math.sin(3 * angle) + 0.03 * Math.cos(5 * angle),
       outer: 2.86 + 0.24 * density(angle) + 0.18 * Math.sin(3 * angle + 0.4) + 0.09 * Math.cos(5 * angle)});
+    const radiusAt = (angle,u) => {
+      const {inner,outer}=bounds(angle);
+      return inner+(outer-inner)*(u+0.07*density(angle)*Math.sin(Math.PI*u));
+    };
+    const columns=320, samples=129, radialWidth=.17, streamWidth=.30;
+    const pebbles=[];
+    for(let k=0;k<points.length;k+=stride){
+      const p=points[k],radius=Math.hypot(p.x,p.y);
+      if(radius>.87&&radius<3.7)pebbles.push({radius,angle:Math.atan2(p.y,p.x)});
+    }
+    const flow=Array.from({length:columns},(_,i)=>{
+      const angle=i/columns*TAU;
+      const radii=Float64Array.from({length:samples},(_,j)=>radiusAt(angle,j/(samples-1)));
+      const pressure=new Float64Array(samples),cdf=new Float64Array(samples);
+      for(const pebble of pebbles){
+        const delta=Math.atan2(Math.sin(angle-pebble.angle),Math.cos(angle-pebble.angle));
+        const across=delta*Math.max(pebble.radius,.98);
+        if(Math.abs(across)>3*streamWidth)continue;
+        const lateral=Math.exp(-.5*(across/streamWidth)**2);
+        for(let j=0;j<samples;j++){
+          const along=radii[j]-pebble.radius;
+          if(Math.abs(along)>3*radialWidth)continue;
+          pressure[j]=Math.max(pressure[j],lateral*Math.exp(-.5*(along/radialWidth)**2));
+        }
+      }
+      // Lower contour density beside a marker creates breathing room. The floor
+      // keeps the inverse cumulative field strictly ordered, even in dense groups.
+      let previous=1;
+      for(let j=0;j<samples;j++){
+        const weight=.16+.84*(1-pressure[j])**2;
+        if(j)cdf[j]=cdf[j-1]+(previous+weight)/2;
+        previous=weight;
+      }
+      for(let j=1;j<samples;j++)cdf[j]/=cdf[samples-1];
+      return {radii,pressure,cdf};
+    });
+    function interpolate(xs,ys,value){
+      if(value<=xs[0])return ys[0];
+      if(value>=xs[xs.length-1])return ys[ys.length-1];
+      let lo=0,hi=xs.length-1;
+      while(hi-lo>1){const mid=(lo+hi)>>1;if(xs[mid]<value)lo=mid;else hi=mid;}
+      const t=(value-xs[lo])/(xs[hi]-xs[lo]);
+      return ys[lo]+(ys[hi]-ys[lo])*t;
+    }
+    const pressureAt=(angle,radius)=>{
+      const index=((angle/TAU%1+1)%1)*columns,a=Math.floor(index),t=index-a;
+      const first=flow[a%columns],next=flow[(a+1)%columns];
+      return interpolate(first.radii,first.pressure,radius)*(1-t)+interpolate(next.radii,next.pressure,radius)*t;
+    };
     const heightAt = (x,y) => {
       const angle = Math.atan2(y,x), {inner,outer} = bounds(angle), u = clamp((Math.hypot(x,y) - inner) / (outer - inner),0,1);
-      return Math.sin(Math.PI * u) * (0.4 + 0.09 * density(angle) + 0.06 * Math.sin(2 * angle));
+      return Math.sin(Math.PI * u) * (0.4 + 0.09 * density(angle) + 0.06 * Math.sin(2 * angle)+.075*pressureAt(angle,Math.hypot(x,y)));
     };
-    const rings = Array.from({length:25},(_,j) => Array.from({length:160},(_,i) => {
-      const angle = i / 160 * TAU, u = j / 24, {inner,outer} = bounds(angle);
-      const radius = inner + (outer - inner) * (u + 0.07 * density(angle) * Math.sin(Math.PI * u));
+    const rings = Array.from({length:25},(_,j) => Array.from({length:columns},(_,i) => {
+      const angle = i / columns * TAU,u=j/24;
+      const radius=interpolate(flow[i].cdf,flow[i].radii,u);
       const x = radius * Math.cos(angle), y = radius * Math.sin(angle);
       return {x,y,z:heightAt(x,y)};
     }));

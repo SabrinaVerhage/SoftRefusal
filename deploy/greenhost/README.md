@@ -88,6 +88,8 @@ The public map draws only recorded points, with black dotted tails for the ten n
 
 Phone chats end after 20 minutes without visitor activity and return to the consent/welcome screen. Typing, touch, keys and scrolling renew the session; background state polling does not. The backend also enforces expiry on resume and submission. Queued/running replies are protected, and completion gives the visitor a fresh idle period. Expiry clears the browser's draft/session selection; saved recordings remain intact. **Start over** and expiry persist across reloads without silently reopening the last chat. Existing visitor databases migrate in place on startup.
 
+The contour surface parts gently around real turn markers. This local relief is rebuilt in the viewer when an updated export arrives, preserving the shared pigment/contour geometry, the overall outline, and inward conversation lanes. It adds no model requests or UMAP fits; the existing export process remains unchanged. The deformation is bounded and contours stay nested even in dense groups.
+
 The GPU must be online for new replies. Hosting does not start, renew, or stop GPU billing. No periodic recording backup is configured by this deployment.
 
 ## Validation

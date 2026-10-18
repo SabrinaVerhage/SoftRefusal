@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#f2f0ec">
   <title>The shape of refusal — Soft Refusal</title>
-  <link rel="stylesheet" href="style.css?v=surface-3">
+  <link rel="stylesheet" href="style.css?v=flow-4">
 </head>
 <body>
   <header class="masthead">
@@ -38,7 +38,7 @@
       <div class="legend-row"><i class="dot refused"></i><span>AI refused</span></div>
       <div class="legend-row"><i class="legend-core" aria-hidden="true"></i><span>Refusal core</span></div>
       <p class="legend-hint">Arrows follow message order. The ten most recently active conversations keep their lines; older turns remain as faded dots. A soft halo marks turns completed in the last five minutes.</p>
-      <p class="legend-hint">Faint words name conversations’ opening topics. Larger heads mark their latest turn. The pink fill and contours form one shared surface, shaped by the recorded field. Tap a line or dot to read the conversation.</p>
+      <p class="legend-hint">Faint words name conversations’ opening topics. Larger heads mark their latest turn. The pink surface and contours flow gently around the recorded dots, like water around pebbles. Tap a line or dot to read the conversation.</p>
     </section>
 
     <section id="layers" class="layers research" aria-label="Map controls">
@@ -147,7 +147,7 @@
     <p><b>Your recordings · donut</b> combines prompt themes around the ring with a fixed refusal reference toward the centre. Each conversation stays in a narrow lane anchored to its opening topic, so its tail can approach the core instead of jumping across the map when subjects change. Radius smoothly compresses a score from recorded model states, fitted from answered and refused turns; it is not a probability. Increasing scores move inward; decreasing scores can retreat. The topic lanes are an artistic arrangement, not an activation embedding. Raw internal-state coordinates remain available in the UMAP view.</p>
     <p>The five newest conversations are featured automatically, one turn every ten seconds. Use <b>Pause features</b> to read at your own pace. Only recorded points appear in the live map; a larger head marks the latest turn. Curved dotted connectors follow the shared surface between checkpoints, with arrows showing message order. The connectors do not measure between-turn motion. The donut surface and core are illustrative; approaching the core does not establish a causal refusal mechanism.</p>
     <p><b>Your recordings · UMAP</b> shows the selected model’s state before each reply, with a separate projection for each layer. The hosted service refits UMAP after completed turns, so existing points can move. The fixed-reference donut stays stable instead. Fewer than six distinct states use a PCA preview. Until answered/refused anchors exist, the public viewer keeps the pink donut as an illustrative backdrop; proximity to that core does not measure refusal.</p>
-    <p><b>Theme clouds</b> are estimated in the backend using seeded text similarity and conversation context, reassessed after completed turns. The public map labels opening topics; later topic estimates remain available with the recorded data. Estimates can be wrong. The surface’s soft lobes respond to the density of actual turns around the ring. Its pigment and contour lines share exactly the same geometry; they are illustrative relief, not a separate density map. Only the ten most recently active conversations have paths. Older points stay visible and selectable. New turns carry a five-minute halo; reduced-motion mode uses a still halo.</p>
+    <p><b>Theme clouds</b> are estimated in the backend using seeded text similarity and conversation context, reassessed after completed turns. The public map labels opening topics; later topic estimates remain available with the recorded data. Estimates can be wrong. The surface’s soft lobes respond to actual turns around the ring, and its contour lines part locally around their markers like water around pebbles. This relief updates when new saved turns arrive, while conversation lanes and refusal scores stay fixed. Pigment and lines share exactly the same geometry; they are illustrative relief, not a separate density map. Only the ten most recently active conversations have paths. Older points stay visible and selectable. New turns carry a five-minute halo; reduced-motion mode uses a still halo.</p>
     <p>UMAP axes have no intrinsic meaning. Nearby points in the projection are not proof of a shared cause of refusal. Neighbors here are measured in the displayed 3D coordinates.</p>
     <div class="about-keys"><span>← ↑ ↓ → <b>Orbit</b></span><span>+ / − <b>Zoom</b></span><span>R <b>Reset</b></span><span>F <b>Focus point</b></span><span>Esc <b>Stop motion</b></span></div>
     <p class="about-credit">VISUAL DIRECTION / @sextechsabrina<br>Mapping the Sexual Avoidance of Artificial Intelligence</p>
@@ -155,7 +155,7 @@
   <script src="data/sample-umap.js"></script>
   <script src="data/path-study.js"></script>
   <script src="data/recordings.js"></script>
-  <script src="cloud.js?v=surface-3"></script>
-  <script src="app.js?v=surface-3"></script>
+  <script src="cloud.js?v=flow-4"></script>
+  <script src="app.js?v=flow-4"></script>
 </body>
 </html>

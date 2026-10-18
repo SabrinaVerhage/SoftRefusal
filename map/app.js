@@ -90,18 +90,16 @@
     const left = project({x:-3.4,y:0,z:0}), right = project({x:3.4,y:0,z:0});
     const gradient = ctx.createLinearGradient(left.x,left.y,right.x,right.y);
     gradient.addColorStop(0,'#f7bd9d'); gradient.addColorStop(.42,'#f1acc6'); gradient.addColorStop(.73,'#e6afd8'); gradient.addColorStop(1,'#cdb0e2');
-    // Fill the very same faces bounded by the contour rings. Normalize projected
-    // winding so overlapping faces remain filled while the surface is orbiting.
-    ctx.beginPath();
-    for (let j=0;j<fieldRings.length-1;j++) for (let i=0;i<fieldRings[j].length;i++) {
-      const k=(i+1)%fieldRings[j].length, a=fieldRings[j][i], b=fieldRings[j][k], c=fieldRings[j+1][k], d=fieldRings[j+1][i];
-      const area=a.x*b.y-b.x*a.y+b.x*c.y-c.x*b.y+c.x*d.y-d.x*c.y+d.x*a.y-a.x*d.y;
-      ctx.moveTo(a.x,a.y);
-      if(area<0){ctx.lineTo(d.x,d.y);ctx.lineTo(c.x,c.y);ctx.lineTo(b.x,b.y);}
-      else{ctx.lineTo(b.x,b.y);ctx.lineTo(c.x,c.y);ctx.lineTo(d.x,d.y);}
-      ctx.closePath();
+    // Each strip uses its two contour rings as boundaries. Separate strip fills
+    // stay inexpensive while covering overlaps as the raised surface rotates.
+    ctx.fillStyle=gradient;
+    for (let j=0;j<fieldRings.length-1;j++) {
+      ctx.beginPath();
+      for (const ring of [fieldRings[j],fieldRings[j+1]]) {
+        ring.forEach((p,i)=>i?ctx.lineTo(p.x,p.y):ctx.moveTo(p.x,p.y));ctx.closePath();
+      }
+      ctx.fill('evenodd');
     }
-    ctx.fillStyle=gradient;ctx.fill();
     curve(landscape.outer,true);ctx.strokeStyle='#171216';ctx.lineWidth=1.7;ctx.stroke();
     curve(landscape.inner,true);ctx.strokeStyle='#291c2780';ctx.lineWidth=.9;ctx.stroke();ctx.restore();
   }
