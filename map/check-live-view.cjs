@@ -27,7 +27,7 @@ const {chromium} = require('playwright');
             const [a,b,c] = this.testPath;
             if (Math.abs(Math.hypot(a[0]-b[0],a[1]-b[1])-6)<.01 && Math.abs(Math.hypot(c[0]-b[0],c[1]-b[1])-6)<.01) window.testArrows++;
           }
-          if (name === 'stroke' && this.testPath?.length === 2 && this.testDash?.join(',') === '3,5' && this.strokeStyle === '#161215') window.testDotted++;
+          if (name === 'stroke' && this.testPath?.length >= 2 && this.testDash?.join(',') === '3,5' && this.strokeStyle === '#161215') window.testDotted++;
           return original.apply(this,args);
         };
       }
@@ -52,6 +52,21 @@ const {chromium} = require('playwright');
     });
     await page.waitForFunction(() => window.testArrows === 10);
     assert(await page.evaluate(()=>window.testCircles<130 && window.testDotted===10)); // Real nodes and black dotted threads.
+    // Contours and pigment must cover the same surface, including the raised
+    // middle ring. Sampling beside the ink catches detached contours on paper.
+    assert(await page.evaluate(()=>{
+      const M=window.CloudMath, points=M.conversationLanes(window.fixturePayload.points).map(M.semanticPosition), field=M.makeLandscape(points);
+      const canvas=document.getElementById('cloud'),box=canvas.getBoundingClientRect(),ctx=canvas.getContext('2d');
+      const camera={yaw:-.18,pitch:.38,zoom:1,target:{x:0,y:0,z:0},pan:{x:0,y:0}};
+      const viewport={cx:box.width*.51,cy:box.height*.445,scale:Math.min((box.width-470)/6.8,box.height*.127)};
+      return field.rings[12].filter((_,i)=>i%8===0).every(p=>{
+        const q=M.project(p,camera,viewport);
+        return [[-2,-2],[-2,2],[2,-2],[2,2]].some(([dx,dy])=>{
+          const [r,g,b]=ctx.getImageData(Math.round(q.x+dx),Math.round(q.y+dy),1,1).data;
+          return Math.max(r,g,b)>150&&Math.min(r,g,b)>80&&Math.max(r,g,b)-Math.min(r,g,b)>15;
+        });
+      });
+    }));
     assert(await page.locator('#core-label').isVisible());
     assert.equal(await page.locator('.theme-cloud').count(),3);
     assert.match(await page.locator('#projection-note').textContent(),/Fixed refusal reference/);
@@ -72,6 +87,18 @@ const {chromium} = require('playwright');
     await page.locator('#feature-loop').click();
     await page.clock.runFor(80500);
     assert.match(await page.locator('#feature-status').textContent(),/FEATURED 1 \/ 5 · MESSAGE 1 \/ 2/);
+    const target=await page.evaluate(()=>{
+      const M=window.CloudMath,points=M.conversationLanes(window.fixturePayload.points).map(p=>({...p,...M.semanticPosition(p)}));
+      const field=M.makeLandscape(points);for(const p of points)p.z=field.heightAt(p.x,p.y);
+      const line=M.surfaceTrail(points[12],points[13],field),p=line[Math.floor(line.length/2)];
+      const box=document.getElementById('cloud').getBoundingClientRect();
+      const q=M.project(p,{yaw:-.18,pitch:.38,zoom:1,target:{x:0,y:0,z:0},pan:{x:0,y:0}},
+        {cx:box.width*.51,cy:box.height*.445,scale:Math.min((box.width-470)/6.8,box.height*.127)});
+      return{x:q.x+box.x,y:q.y+box.y};
+    });
+    await page.mouse.click(target.x,target.y);
+    assert.match(await page.locator('#thread-number').textContent(),/CONVERSATION 07/);
+    assert.equal(await page.locator('#feature-loop').getAttribute('aria-pressed'),'false');
     const out=path.join(__dirname,'runtime');fs.mkdirSync(out,{recursive:true});
     await page.screenshot({path:path.join(out,'final-map-desktop.png')});
     await page.evaluate(() => {
@@ -81,6 +108,7 @@ const {chromium} = require('playwright');
     assert(await page.locator('#core-label').isVisible());
     assert.match(await page.locator('#projection-note').textContent(),/illustrative core/);
     await page.setViewportSize({width:390,height:844});
+    await page.waitForFunction(()=>!document.getElementById('map-explanation').open);
     assert.equal(await page.locator('#map-explanation').getAttribute('open'),null);
     assert(await page.evaluate(() => document.documentElement.scrollWidth<=innerWidth));
     await page.screenshot({path:path.join(out,'final-map-mobile.png')});
@@ -121,6 +149,6 @@ const {chromium} = require('playwright');
     assert(await phone.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
     await phone.screenshot({path:path.join(out,'final-phone-mobile.png')});
     assert.deepEqual(errors,[]);
-    console.log('Passed: branding, default orbit, real points only, five-conversation loop, ten-second steps, pause/resume, refresh preservation, latest paths, arrows, themes, donut fallback, mobile layout and phone scrolling.');
+    console.log('Passed: shared contour/pigment surface, curved-path selection, default orbit, real markers, feature loop, arrows, topic lanes, mobile layout and phone scrolling.');
   } finally {await browser.close();}
 })().catch(error=>{console.error(error);process.exitCode=1;});

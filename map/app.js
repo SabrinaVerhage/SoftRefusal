@@ -28,7 +28,7 @@
   // The donut field (wash, contours, core) frames both the reference field and the semantic donut.
   const shaped = () => data.kind === 'concept' || data.kind === 'semantic' || (!tools && data.kind === 'recordings');
   const labelNodes = [];
-  let recentIds = new Set(), pulsePoints = [], nextPulseCheck = 0, density = [];
+  let recentIds = new Set(), pulsePoints = [], nextPulseCheck = 0, landscape = null, fieldRings = [], trailCurves = new Map(), endIds = new Set();
   const hasPath = p => !recorded() || recentIds.has(p.conversation_id);
   const labelNames = ['consent', 'intimacy', 'desire', 'erotic fiction', 'relationships', 'sexual health'];
 
@@ -53,7 +53,7 @@
     dpr = Math.min(devicePixelRatio || 1, 2); canvas.width = Math.round(width * dpr); canvas.height = Math.round(height * dpr);
     const mobile = width <= 760, usableWidth = mobile ? width - 22 : width - (width < 1150 ? 380 : 470);
     const mobileY = tools ? (height < 700 ? 0.47 : 0.4) : 0.49;
-    viewport = { cx: mobile ? width * 0.5 : width * 0.51, cy: mobile ? height * mobileY : height * 0.445, scale: Math.min(usableWidth / 5.9, height * (mobile ? (tools ? 0.081 : 0.105) : 0.127)) };
+    viewport = { cx: mobile ? width * 0.5 : width * 0.51, cy: mobile ? height * mobileY : height * 0.445, scale: Math.min(usableWidth / (!tools && landscape ? 6.8 : 5.9), height * (mobile ? (tools ? 0.081 : 0.105) : 0.127)) };
     dirty = true;
   }
   function project(p) { return M.project(p, camera, viewport); }
@@ -67,6 +67,7 @@
   }
   function drawWash() {
     if (!shaped() || !$('contours').checked) return;
+    if (landscape) { drawLandscape(); return; }
     ctx.save();
     curve(outer, true); ctx.strokeStyle = '#fffdfa'; ctx.lineWidth = 21; ctx.shadowColor = '#3a17271a'; ctx.shadowBlur = 25; ctx.shadowOffsetY = 8; ctx.stroke();
     ctx.shadowBlur = 0; ctx.shadowOffsetY = 0;
@@ -79,6 +80,30 @@
     ctx.restore();
     curve(outer, true); ctx.strokeStyle = '#171216'; ctx.lineWidth = 1.7; ctx.stroke();
     curve(inner, true); ctx.strokeStyle = '#291c2780'; ctx.lineWidth = 0.7; ctx.stroke();
+  }
+  function drawLandscape() {
+    fieldRings = landscape.rings.map(ring => ring.map(project));
+    ctx.save();
+    curve(landscape.outer,true); ctx.strokeStyle = '#fffdfa'; ctx.lineWidth = 20;
+    ctx.shadowColor = '#3a17271a'; ctx.shadowBlur = 20; ctx.shadowOffsetY = 6; ctx.stroke();
+    ctx.shadowBlur = 0; ctx.shadowOffsetY = 0;
+    const left = project({x:-3.4,y:0,z:0}), right = project({x:3.4,y:0,z:0});
+    const gradient = ctx.createLinearGradient(left.x,left.y,right.x,right.y);
+    gradient.addColorStop(0,'#f7bd9d'); gradient.addColorStop(.42,'#f1acc6'); gradient.addColorStop(.73,'#e6afd8'); gradient.addColorStop(1,'#cdb0e2');
+    // Fill the very same faces bounded by the contour rings. Normalize projected
+    // winding so overlapping faces remain filled while the surface is orbiting.
+    ctx.beginPath();
+    for (let j=0;j<fieldRings.length-1;j++) for (let i=0;i<fieldRings[j].length;i++) {
+      const k=(i+1)%fieldRings[j].length, a=fieldRings[j][i], b=fieldRings[j][k], c=fieldRings[j+1][k], d=fieldRings[j+1][i];
+      const area=a.x*b.y-b.x*a.y+b.x*c.y-c.x*b.y+c.x*d.y-d.x*c.y+d.x*a.y-a.x*d.y;
+      ctx.moveTo(a.x,a.y);
+      if(area<0){ctx.lineTo(d.x,d.y);ctx.lineTo(c.x,c.y);ctx.lineTo(b.x,b.y);}
+      else{ctx.lineTo(b.x,b.y);ctx.lineTo(c.x,c.y);ctx.lineTo(d.x,d.y);}
+      ctx.closePath();
+    }
+    ctx.fillStyle=gradient;ctx.fill();
+    curve(landscape.outer,true);ctx.strokeStyle='#171216';ctx.lineWidth=1.7;ctx.stroke();
+    curve(landscape.inner,true);ctx.strokeStyle='#291c2780';ctx.lineWidth=.9;ctx.stroke();ctx.restore();
   }
   function drawCloud() {
     projected = data.points.map(p => ({ ...project(p), p })).filter(q => filters.has(q.p.outcome) && q.x > -20 && q.x < width + 20 && q.y > -20 && q.y < height + 20);
@@ -101,12 +126,10 @@
   }
   function drawContours() {
     if (!shaped() || !$('contours').checked) return;
-    if (recorded() && !data.synthetic) {
+    if (landscape) {
       ctx.save(); ctx.strokeStyle = '#261921'; ctx.lineWidth = 0.75; ctx.globalAlpha = 0.52;
-      for (const contour of density) {
-        ctx.beginPath();
-        for (const [a, b] of contour.segments) { const p = project(a), q = project(b); ctx.moveTo(p.x, p.y); ctx.lineTo(q.x, q.y); }
-        ctx.stroke();
+      for (const ring of fieldRings.slice(1,-1)) {
+        ctx.beginPath();ring.forEach((p,i)=>i?ctx.lineTo(p.x,p.y):ctx.moveTo(p.x,p.y));ctx.closePath();ctx.stroke();
       }
       ctx.restore(); return;
     }
@@ -122,7 +145,7 @@
   }
   function drawPathNode(p, endpoint) {
     if (!filters.has(p.outcome)) return;
-    const q = project(p), r = Math.min(6, 4.1 * q.per * Math.sqrt(camera.zoom)); drawnPoints.push({ ...q, p });
+    const q = project(p), r = Math.min(endpoint && !tools ? 7.2 : 6, (endpoint && !tools ? 5.7 : 4.1) * q.per * Math.sqrt(camera.zoom)); drawnPoints.push({ ...q, p });
     if (recorded()) {
       circle(q.x, q.y, r + 2.2); ctx.fillStyle = '#fdfaf5'; ctx.fill(); circle(q.x, q.y, r);
       if (!tools) {
@@ -171,7 +194,7 @@
   }
   function drawRecordedTrails() {
     ctx.save();
-    // Straight links pass through every measured checkpoint; no invented curved detours.
+    // Surface connectors pass through real checkpoints; only their markers are data.
     for (const [a, b] of segments) {
       if (!hasPath(a) || !filters.has(a.outcome) || !filters.has(b.outcome)) continue;
       const active = a.conversation_id === selected?.conversation_id;
@@ -179,16 +202,18 @@
       if (!tools) {
         // Every conversation reads as one continuous thread: a paper halo lifts it off the contours.
         const lineWidth = active ? 2 : a.conversation_id === hoveredThread ? 1.9 : 1.6;
-        ctx.setLineDash([]); ctx.lineCap = 'round'; curve([a, b]);
+        ctx.setLineDash([]); ctx.lineCap = 'round'; curve(trailCurves.get(b.point_id) || [a,b]);
         ctx.strokeStyle = 'rgba(253,250,245,0.8)'; ctx.lineWidth = lineWidth + 2; ctx.stroke();
         ctx.setLineDash([3, 5]); ctx.strokeStyle = '#161215'; ctx.lineWidth = lineWidth; ctx.stroke();
       } else {
         ctx.strokeStyle = rgba(a.color, 1); ctx.lineWidth = active ? 2.3 : $('all-conversations').checked ? 1.8 : 1;
         ctx.setLineDash(active || $('all-conversations').checked ? [] : [3, 5]); curve([a, b]); ctx.stroke();
       }
-      const p = project(a), q = project(b), length = Math.hypot(q.x - p.x, q.y - p.y);
+      const connector=trailCurves.get(b.point_id), middle=connector?Math.floor((connector.length-1)*.64):0;
+      const p = project(connector ? connector[Math.max(0,middle-1)] : a), q = project(connector ? connector[middle] : b);
+      const length = Math.hypot(project(b).x-project(a).x,project(b).y-project(a).y);
       if (length > 12) {
-        const angle = Math.atan2(q.y - p.y, q.x - p.x), x = p.x + (q.x - p.x) * 0.64, y = p.y + (q.y - p.y) * 0.64;
+        const angle = Math.atan2(q.y - p.y, q.x - p.x), x = connector ? q.x : p.x + (q.x - p.x) * 0.64, y = connector ? q.y : p.y + (q.y - p.y) * 0.64;
         ctx.strokeStyle = '#302131'; ctx.lineWidth = active ? 2 : 1.5;
         ctx.setLineDash([]); ctx.beginPath(); ctx.moveTo(x - 6 * Math.cos(angle - 0.5), y - 6 * Math.sin(angle - 0.5)); ctx.lineTo(x, y); ctx.lineTo(x - 6 * Math.cos(angle + 0.5), y - 6 * Math.sin(angle + 0.5)); ctx.stroke();
       }
@@ -197,7 +222,7 @@
     for (const p of data.points) {
       if (!hasPath(p)) continue;
       ctx.globalAlpha = pathOpacity(p);
-      drawPathNode(p, false);
+      drawPathNode(p, endIds.has(p.point_id));
     }
     ctx.restore();
   }
@@ -308,9 +333,12 @@
     let best = (width <= 760 ? 16 : 9) ** 2, id = null;
     for (const [a, b] of segments) {
       if (!$('trails').checked || !hasPath(a) || !filters.has(a.outcome) || !filters.has(b.outcome)) continue;
-      const p = project(a), q = project(b), dx = q.x - p.x, dy = q.y - p.y, t = clamp(((x - p.x) * dx + (y - p.y) * dy) / (dx * dx + dy * dy || 1), 0, 1);
-      const distance = (p.x + t * dx - x) ** 2 + (p.y + t * dy - y) ** 2;
-      if (distance < best) { best = distance; id = a.conversation_id; }
+      const connector = trailCurves.get(b.point_id) || [a,b];
+      for (let i=1;i<connector.length;i++) {
+        const p = project(connector[i-1]), q = project(connector[i]), dx = q.x - p.x, dy = q.y - p.y, t = clamp(((x - p.x) * dx + (y - p.y) * dy) / (dx * dx + dy * dy || 1), 0, 1);
+        const distance = (p.x + t * dx - x) ** 2 + (p.y + t * dy - y) ** 2;
+        if (distance < best) { best = distance; id = a.conversation_id; }
+      }
     }
     return id;
   }
@@ -420,7 +448,8 @@
   }
   function semanticDataset(source = window.RECORDINGS) {
     const known = new Set(['answered', 'redirected', 'refused', 'unclear']);
-    const points = source.points.map((p, i) => {
+    const sourcePoints = !tools && !source.synthetic ? M.conversationLanes(source.points) : source.points;
+    const points = sourcePoints.map((p, i) => {
       // Radius from the refusal score: answered turns on the outer rim, core turns inside the core.
       const d = clamp(2.55 - p.core_score * 2.0, 0.16, 3.05);
       const position = source.semantic.radial_mapping === 'smooth_v1' ? M.semanticPosition(p) : { x: d * Math.cos(p.angle), y: d * Math.sin(p.angle), z: p.lift * 0.42 };
@@ -461,7 +490,12 @@
     const wasOrbiting = autoOrbit;
     replay = { path: [], index: 0, playing: false, reveal: false, next: 0 };
     data = next; morph = null; segments = data.kind === 'concept' ? [] : M.conversationPaths(data.points); filters.clear(); ['answered', 'redirected', 'refused', 'unclear', 'unlabeled'].forEach(x => filters.add(x));
-    density = recorded() && !data.synthetic ? M.densityContours(data.points) : [];
+    landscape = recorded() && !data.synthetic && !tools ? M.makeLandscape(data.points) : null;
+    if (landscape && data.kind === 'semantic') for (const p of data.points) p.z = landscape.heightAt(p.x,p.y);
+    trailCurves = new Map(landscape && data.kind === 'semantic' ? segments.map(([a,b])=>[b.point_id,M.surfaceTrail(a,b,landscape)]) : []);
+    const endings = new Map();
+    for (const p of data.points) if (!endings.has(p.conversation_id) || p.turn_id > endings.get(p.conversation_id).turn_id) endings.set(p.conversation_id,p);
+    endIds = new Set([...endings.values()].map(p=>p.point_id)); resize();
     recentIds = M.recentConversations(data.points); pulsePoints = data.points.filter(p => M.isRecentPoint(p));
     $('replay').hidden = !recorded();
     $('conversation-select').replaceChildren();
@@ -474,11 +508,11 @@
     $('core-sub').textContent = data.kind === 'semantic' ? 'REFUSAL REFERENCE / VISUAL METAPHOR' : 'A CONCEPTUAL LANDMARK';
     const measured = data.kind === 'semantic' && !data.synthetic;
     $('map-description').textContent = measured
-      ? 'Conversations move through estimated prompt themes and toward a fixed refusal reference. Black dotted paths follow the latest ten conversations; earlier turns remain as faded dots.'
+      ? 'Conversations start in their opening topic and reach toward the refusal core. Black dotted tails trace recorded turns; larger heads mark the latest message. Earlier conversations remain as faded dots.'
       : recorded() && !data.synthetic
         ? 'Live conversations in an exploratory projection. The pink donut and core are illustrative while refusal-reference labels are missing; distance to this core does not measure refusal.'
         : 'A pink landscape of conversation and refusal. This illustrative view shows how a conversation can approach the core.';
-    $('projection-note').textContent = measured ? 'Fixed refusal reference · estimated text themes · contours follow recorded turn density' : recorded() && !data.synthetic ? 'Live projection · illustrative core · awaiting refusal labels' : 'Illustrative conversations · no model measurements';
+    $('projection-note').textContent = measured ? 'Fixed refusal reference · topic lanes · one shared pink contour surface' : recorded() && !data.synthetic ? 'Live projection · illustrative core · awaiting refusal labels' : 'Illustrative conversations · no model measurements';
     $('trails').disabled = data.kind !== 'concept' && !segments.length; $('trails').checked = data.kind === 'concept' || recorded(); $('tour').disabled = data.kind !== 'concept' && !recorded();
     $('color-topic').textContent = recorded() ? 'Conversation' : 'Spectrum'; renderLayerSwitch();
     $('source-summary').textContent = data.kind === 'concept' ? 'Illustrative field · synthetic points' : data.kind === 'umap' ? 'Actual UMAP · synthetic vectors' : `Imported coordinates · ${data.synthetic === true || data.points.every(p => p.synthetic === true) ? 'synthetic' : 'user-supplied data'}`;

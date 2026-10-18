@@ -69,9 +69,22 @@ const topicA = M.semanticPosition({core_score:0.2,angle:0,lift:0,topic_angle:0.5
 const topicB = M.semanticPosition({core_score:0.2,angle:0,lift:0,topic_angle:2.5,topic_lift:0.1});
 assert(Math.hypot(topicA.x-topicB.x,topicA.y-topicB.y)>2);
 assert(Math.abs(Math.hypot(topicA.x,topicA.y)-Math.hypot(topicB.x,topicB.y))<1e-12);
-assert.deepEqual(M.densityContours([]),[]);
-const density = M.densityContours([{x:1,y:1,z:0}]);
-assert(density.every(c=>c.segments.length>0 && c.segments.flat().every(p=>Math.hypot(p.x-1,p.y-1)<1.3)));
+const laneSource=[{point_id:'a0',conversation_id:'a',turn_id:0,topic_angle:3,core_score:0},{point_id:'a1',conversation_id:'a',turn_id:1,topic_angle:-2,core_score:1},{point_id:'b0',conversation_id:'b',turn_id:0,topic_angle:-1,core_score:0}];
+const lanes=M.conversationLanes(laneSource);
+assert.equal(lanes[0].display_angle,3);assert(Math.abs(lanes[1].display_angle-3)<=.2);
+assert.equal(lanes[2].display_angle,-1);assert.equal(laneSource[0].display_angle,undefined);
+const field=M.makeLandscape(lanes.map(M.semanticPosition));
+assert.equal(field.rings.length,25);assert.equal(field.inner,field.rings[0]);assert.equal(field.outer,field.rings.at(-1));
+for(let i=0;i<field.inner.length;i++)for(let j=1;j<field.rings.length;j++){
+  const p=field.rings[j][i],q=field.rings[j-1][i];
+  assert(Math.hypot(p.x,p.y)>Math.hypot(q.x,q.y));assert.equal(p.z,field.heightAt(p.x,p.y));
+}
+const from=M.semanticPosition(lanes[0]),to=M.semanticPosition(lanes[1]);
+from.z=field.heightAt(from.x,from.y);to.z=field.heightAt(to.x,to.y);
+const trail=M.surfaceTrail(from,to,field);
+assert.equal(trail[0],from);assert.equal(trail.at(-1),to);
+assert(trail.slice(1).every((p,i)=>Math.hypot(p.x,p.y)<=Math.hypot(trail[i].x,trail[i].y)+1e-12));
+assert(trail.every(p=>p.z===field.heightAt(p.x,p.y)));
 assert.equal(M.themeRegions([{point_id:'a',x:1,y:1,z:0}],{regions:[{name:'one real turn',point_ids:['a','missing']}]} )[0].count,1);
 assert(scorePoints.every(p => Object.values(p).every(Number.isFinite)));
 assert(scorePoints.slice(1).every((p, i) => Math.hypot(p.x, p.y) < Math.hypot(scorePoints[i].x, scorePoints[i].y)));

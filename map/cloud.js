@@ -101,7 +101,7 @@
   function semanticPosition(p) {
     // Fixed artistic radial compression. Preserve the unbounded score for inspection.
     const radius = 0.16 + 2.89 / (1 + Math.exp(clamp(3.8 * (p.core_score - 0.5), -700, 700)));
-    const angle = p.topic_angle ?? p.angle, lift = p.topic_lift ?? p.lift;
+    const angle = p.display_angle ?? p.topic_angle ?? p.angle, lift = p.topic_lift ?? p.lift ?? 0;
     return { x: radius * Math.cos(angle), y: radius * Math.sin(angle), z: lift * 0.42 };
   }
   function pointTime(p) {
@@ -124,8 +124,38 @@
   function featuredTurns(points, count = 5) {
     return [...recentConversations(points, count)].flatMap(id => conversationPath(points, id));
   }
+  function conversationLanes(points) {
+    const openings = new Map();
+    for (const p of points) {
+      const old = openings.get(p.conversation_id);
+      if (!old || p.turn_id < old.turn_id) openings.set(p.conversation_id, p);
+    }
+    return points.map(p => {
+      const opening = openings.get(p.conversation_id);
+      if (!Number.isFinite(opening?.topic_angle)) return {...p};
+      const angle = Number.isFinite(p.topic_angle) ? p.topic_angle : opening.topic_angle;
+      const delta = Math.atan2(Math.sin(angle - opening.topic_angle), Math.cos(angle - opening.topic_angle));
+      return {...p, display_angle: opening.topic_angle + clamp(delta * 0.12, -0.20, 0.20),
+        opening_topic_id: opening.topic_id, opening_topic: opening.topic};
+    });
+  }
   // Local prompt-word hints, not a claim that model activations have named semantic axes.
   function themeRegions(points, exportedThemes) {
+    if (points.some(p => p.opening_topic_id)) {
+      const groups = new Map();
+      for (const p of points) {
+        if (!p.opening_topic_id) continue;
+        if (!groups.has(p.opening_topic_id)) groups.set(p.opening_topic_id, []);
+        groups.get(p.opening_topic_id).push(p);
+      }
+      return [...groups.values()].map(members => {
+        const openings = new Map();
+        for (const p of members) if (!openings.has(p.conversation_id) || p.turn_id < openings.get(p.conversation_id).turn_id) openings.set(p.conversation_id,p);
+        const starts = [...openings.values()];
+        const point = Object.fromEntries(['x','y','z'].map(key => [key, starts.reduce((sum,p) => sum + p[key],0) / starts.length]));
+        return {name: members[0].opening_topic, point, members, count: members.length};
+      });
+    }
     if (exportedThemes?.regions) {
       const byId = new Map(points.map(p => [p.point_id, p]));
       return exportedThemes.regions.flatMap(region => {
@@ -162,37 +192,49 @@
     }
     return regions;
   }
-  function densityContours(points) {
-    // Gaussian density in the displayed topic/refusal plane. Only recorded
-    // checkpoints contribute; these segments never become selectable data dots.
-    if (!points.length) return [];
-    const size = 120, extent = 3.7, step = 2 * extent / (size - 1), bandwidth = 0.44;
-    const grid = new Float64Array(size * size), stride = Math.max(1, Math.ceil(points.length / 2000));
-    const reach = Math.ceil(3 * bandwidth / step);
+  function makeLandscape(points) {
+    // One annular surface supplies BOTH pigment and contour vertices. Its soft
+    // lobes follow the angular density of actual turns; it is illustrative relief.
+    const bins = 96, profile = new Float64Array(bins), stride = Math.max(1, Math.ceil(points.length / 2000));
     for (let k = 0; k < points.length; k += stride) {
-      const p = points[k], ix = Math.round((p.x + extent) / step), iy = Math.round((p.y + extent) / step);
-      for (let y = Math.max(0, iy - reach); y <= Math.min(size - 1, iy + reach); y++)
-        for (let x = Math.max(0, ix - reach); x <= Math.min(size - 1, ix + reach); x++) {
-          const distance = ((x * step - extent - p.x) ** 2 + (y * step - extent - p.y) ** 2) / bandwidth ** 2;
-          grid[y * size + x] += Math.exp(-distance / 2) * stride;
-        }
-    }
-    const peak = Math.max(...grid), contours = [];
-    for (const ratio of [.07, .12, .2, .3, .43, .58, .75, .9]) {
-      const level = peak * ratio, segments = [];
-      for (let y = 0; y < size - 1; y++) for (let x = 0; x < size - 1; x++) {
-        const corners = [[x,y],[x+1,y],[x+1,y+1],[x,y+1]], crossings = [];
-        for (let edge = 0; edge < 4; edge++) {
-          const a = corners[edge], b = corners[(edge + 1) % 4], va = grid[a[1] * size + a[0]], vb = grid[b[1] * size + b[0]];
-          if ((va >= level) === (vb >= level)) continue;
-          const t = (level - va) / (vb - va);
-          crossings.push({x: (a[0] + t * (b[0] - a[0])) * step - extent, y: (a[1] + t * (b[1] - a[1])) * step - extent, z: 0});
-        }
-        for (let i = 0; i + 1 < crossings.length; i += 2) segments.push([crossings[i], crossings[i + 1]]);
+      const angle = Math.atan2(points[k].y, points[k].x);
+      for (let j = 0; j < bins; j++) {
+        const delta = Math.atan2(Math.sin(j / bins * TAU - angle), Math.cos(j / bins * TAU - angle));
+        profile[j] += Math.exp(-0.5 * (delta / 0.36) ** 2) * stride;
       }
-      contours.push({level, segments});
     }
-    return contours;
+    const peak = Math.max(1e-12, ...profile);
+    const density = angle => {
+      const index = ((angle / TAU % 1 + 1) % 1) * bins, a = Math.floor(index), t = index - a;
+      return (profile[a % bins] * (1 - t) + profile[(a + 1) % bins] * t) / peak;
+    };
+    const bounds = angle => ({inner: 0.98 + 0.07 * Math.sin(3 * angle) + 0.03 * Math.cos(5 * angle),
+      outer: 2.86 + 0.24 * density(angle) + 0.18 * Math.sin(3 * angle + 0.4) + 0.09 * Math.cos(5 * angle)});
+    const heightAt = (x,y) => {
+      const angle = Math.atan2(y,x), {inner,outer} = bounds(angle), u = clamp((Math.hypot(x,y) - inner) / (outer - inner),0,1);
+      return Math.sin(Math.PI * u) * (0.4 + 0.09 * density(angle) + 0.06 * Math.sin(2 * angle));
+    };
+    const rings = Array.from({length:25},(_,j) => Array.from({length:160},(_,i) => {
+      const angle = i / 160 * TAU, u = j / 24, {inner,outer} = bounds(angle);
+      const radius = inner + (outer - inner) * (u + 0.07 * density(angle) * Math.sin(Math.PI * u));
+      const x = radius * Math.cos(angle), y = radius * Math.sin(angle);
+      return {x,y,z:heightAt(x,y)};
+    }));
+    return {rings, inner:rings[0], outer:rings.at(-1), heightAt};
+  }
+  function surfaceTrail(a,b,landscape) {
+    // A visual connector through real endpoints, following the surface rather
+    // than a chord that slices sideways across the core. No extra data markers.
+    const from = Math.atan2(a.y,a.x), to = Math.atan2(b.y,b.x);
+    const delta = Math.atan2(Math.sin(to-from),Math.cos(to-from)), ra = Math.hypot(a.x,a.y), rb = Math.hypot(b.x,b.y);
+    const steps = Math.max(12,Math.ceil(Math.abs(ra-rb)*10));
+    return Array.from({length:steps+1},(_,i) => {
+      if (!i) return a;
+      if (i === steps) return b;
+      const t = i / steps, angle = from + delta * (t*t*(3-2*t)), radius = ra + (rb-ra)*t;
+      const x = radius*Math.cos(angle),y = radius*Math.sin(angle);
+      return {x,y,z:landscape.heightAt(x,y)};
+    });
   }
   function project(p, camera, viewport) {
     const x = p.x - camera.target.x, y = p.y - camera.target.y, z = p.z - camera.target.z;
@@ -201,5 +243,5 @@
     const per = 8 / Math.max(0.4, 8 + depth), scale = viewport.scale * camera.zoom;
     return { x: viewport.cx + xx * per * scale + camera.pan.x, y: viewport.cy - yy * per * scale + camera.pan.y, depth, per };
   }
-  root.CloudMath = { TAU, clamp, rng, surface, makeConcept, normalizePoints, recordingPositions, parseFile, conversationPaths, conversationPath, conversationColorIndex, semanticPosition, nearest, project, topics, pointTime, isRecentPoint, recentConversations, featuredTurns, themeRegions, densityContours };
+  root.CloudMath = { TAU, clamp, rng, surface, makeConcept, normalizePoints, recordingPositions, parseFile, conversationPaths, conversationPath, conversationColorIndex, semanticPosition, nearest, project, topics, pointTime, isRecentPoint, recentConversations, featuredTurns, themeRegions, conversationLanes, makeLandscape, surfaceTrail };
 })(typeof window !== 'undefined' ? window : globalThis);
