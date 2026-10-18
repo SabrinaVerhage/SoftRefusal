@@ -28,6 +28,7 @@ from hosted.images import ImageJobs
 ROOT = Path(__file__).resolve().parents[1]
 COOKIE = "softrefusal_visitor"
 ACTIVE = ("queued", "running")
+SESSION_IDLE_SECONDS = 20 * 60
 log = logging.getLogger("softrefusal")
 
 
@@ -68,6 +69,12 @@ class Gateway:
         for name, definition in {"kind": "TEXT NOT NULL DEFAULT 'chat'", "payload": "TEXT", "upstream_id": "TEXT"}.items():
             if name not in columns:
                 self.db.execute(f"ALTER TABLE jobs ADD COLUMN {name} {definition}")
+        conversation_columns = {r[1] for r in self.db.execute("PRAGMA table_info(conversations)")}
+        if "last_activity" not in conversation_columns:
+            self.db.execute("ALTER TABLE conversations ADD COLUMN last_activity REAL")
+            self.db.execute("UPDATE conversations SET last_activity=MAX(created, COALESCE((SELECT MAX(jobs.created) FROM jobs WHERE jobs.conversation=conversations.id), created))")
+        if "expired" not in conversation_columns:
+            self.db.execute("ALTER TABLE conversations ADD COLUMN expired INTEGER NOT NULL DEFAULT 0")
         self.db.execute("UPDATE jobs SET status='interrupted', error='The server restarted. Your saved replies are safe; send this message again.' WHERE status IN ('queued','running')")
         self.db.commit()
         factory = adapter_factory or (lambda c: RemoteAdapter(c, load_connection(self.connection_file)))
@@ -121,13 +128,34 @@ class Gateway:
             if self.db.execute("SELECT 1 FROM jobs WHERE owner=? AND status IN ('queued','running')", (owner,)).fetchone():
                 raise HTTPException(409, "Wait for your reply or stop it before starting a new conversation.")
             sid = self.service.create(self.instruction)
-            self.db.execute("INSERT INTO conversations VALUES (?,?,?)", (sid, owner, time.time()))
+            now = time.time()
+            self.db.execute("INSERT INTO conversations(id,owner,created,last_activity) VALUES (?,?,?,?)", (sid, owner, now, now))
             self.db.commit()
             return sid, token
 
     def own(self, owner, sid):
         if not owner or not self.db.execute("SELECT 1 FROM conversations WHERE id=? AND owner=?", (sid, owner)).fetchone():
             raise HTTPException(404, "Conversation not found.")
+
+    def session_expired(self, sid):
+        row = self.db.execute("SELECT last_activity,expired FROM conversations WHERE id=?", (sid,)).fetchone()
+        if row["expired"]:
+            return True
+        if time.time() - row["last_activity"] < SESSION_IDLE_SECONDS:
+            return False
+        if self.db.execute("SELECT 1 FROM jobs WHERE conversation=? AND status IN ('queued','running')", (sid,)).fetchone():
+            return False
+        self.db.execute("UPDATE conversations SET expired=1 WHERE id=?", (sid,))
+        self.db.commit()
+        return True
+
+    def activity(self, owner, sid):
+        with self.lock:
+            self.own(owner, sid)
+            if self.session_expired(sid):
+                raise HTTPException(410, "This chat timed out after 20 minutes without activity. Start a new conversation.")
+            self.db.execute("UPDATE conversations SET last_activity=? WHERE id=?", (time.time(), sid))
+            self.db.commit()
 
     def submit(self, owner, sid, prompt, key, ip):
         if not isinstance(prompt, str) or not 1 <= len(prompt.strip()) <= 4000:
@@ -141,6 +169,8 @@ class Gateway:
                 if old["conversation"] != sid or old["prompt"] != prompt.strip():
                     raise HTTPException(409, "Request key was already used for another message.")
                 return old["id"]
+            if self.session_expired(sid):
+                raise HTTPException(410, "This chat timed out after 20 minutes without activity. Start a new conversation.")
             if not self.accepting or not self.health["online"]:
                 raise HTTPException(503, "The model is offline. Your saved conversation is still here.")
             if shutil.disk_usage(self.directory).free < 512 * 1024**2:
@@ -155,20 +185,24 @@ class Gateway:
             self.limit("ip:" + hashlib.sha256(ip.encode()).hexdigest(), 30)
             jid = secrets.token_hex(16)
             self.db.execute("INSERT INTO jobs(id,owner,conversation,prompt,status,created,error,request_key) VALUES (?,?,?,?,?,?,?,?)", (jid, owner, sid, prompt.strip(), "queued", time.time(), None, key))
+            self.db.execute("UPDATE conversations SET last_activity=? WHERE id=?", (time.time(), sid))
             self.db.commit()
             self.wake.set()
             return jid
 
-    def state(self, owner, sid=None):
+    def state(self, owner, sid=None, resume=True):
         with self.lock:
-            if not sid and owner:
+            if not sid and owner and resume:
                 row = self.db.execute("SELECT id FROM conversations WHERE owner=? ORDER BY created DESC LIMIT 1", (owner,)).fetchone()
                 sid = row[0] if row else None
             result = {"conversation": sid, "rows": [], "job": None, "model": {**self.health, "id": self.service.config["model_id"], "name": self.service.config.get("display_name", self.model), "auto_label": self.service.auto_label_enabled}, "map": self.map_state}
             if sid:
                 self.own(owner, sid)
+                if self.session_expired(sid):
+                    return {**result, "conversation": None, "session_expired": True}
                 state = self.service.state(sid)
                 result["rows"] = [{k: row.get(k) for k in ("point_id", "turn_id", "prompt", "response", "label", "label_source", "hit_token_limit")} for row in state["rows"]]
+                result["idle_timeout_seconds"] = SESSION_IDLE_SECONDS
                 row = self.db.execute("SELECT * FROM jobs WHERE conversation=? ORDER BY created DESC LIMIT 1", (sid,)).fetchone()
                 if row:
                     job = {k: row[k] for k in ("id", "status", "prompt", "error")}
@@ -229,6 +263,7 @@ class Gateway:
                 # Keep raw diagnostics in private attempt files, never visitor responses.
                 error = None if status == "complete" else "Reply stopped or could not be completed. Earlier saved turns are safe. Try again or start a new conversation."
                 self.db.execute("UPDATE jobs SET status=?, error=? WHERE id=?", (status, error, row["id"]))
+                self.db.execute("UPDATE conversations SET last_activity=? WHERE id=?", (time.time(), row["conversation"]))
                 self.db.commit()
                 if status != "complete":
                     self.service.adapter = None  # Reconnect after an offline/replaced GPU.
@@ -343,8 +378,14 @@ def create_app(gateway=None, origin=None, secure=True):
             return {"active": active}
 
     @app.get("/api/state")
-    def state(request: Request, conversation: str | None = None):
-        return gateway.state(owner(request), conversation)
+    def state(request: Request, conversation: str | None = None, resume: bool = True):
+        return gateway.state(owner(request), conversation, resume=resume)
+
+    @app.post("/api/activity")
+    async def activity(request: Request):
+        body = await body_of(request)
+        gateway.activity(owner(request), body.get("conversation"))
+        return {"ok": True}
 
     @app.post("/api/start")
     async def start(request: Request):

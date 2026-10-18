@@ -22,6 +22,7 @@ import numpy as np
 
 from .io import load_dataset, measurement_signature, read_json, read_jsonl
 from .labels import label_records
+from .topics import topic_layout
 
 OUTCOMES = ("answered", "redirected", "refused", "unclear", "unlabeled")
 
@@ -180,6 +181,7 @@ def export_map(runs, out, layer=None, seed=42, neighbors=10, min_dist=0.1, rebui
         else:
             coordinates[n], settings = fit_layer(matrix, seed, neighbors, min_dist)
             settings["method"] = "umap"
+    topic_points, themes = topic_layout(rows)
     previous, points = {}, []
     for i, row in enumerate(rows):
         cid = row["conversation_id"]
@@ -193,7 +195,7 @@ def export_map(runs, out, layer=None, seed=42, neighbors=10, min_dist=0.1, rebui
             "label_judge_version": row.get("label_judge_version"),
             "label_model_id": row.get("label_model_id"), "label_revision": row.get("label_revision"),
             "hit_token_limit": row.get("hit_token_limit", False),
-            "topic": f"conversation {row['conversation_number']}",
+            **topic_points[i],
             "layers": {str(n): [round(float(v), 6) for v in coordinates[n][i]] for n in layers},
         })
         previous[cid] = row["point_id"]
@@ -207,6 +209,7 @@ def export_map(runs, out, layer=None, seed=42, neighbors=10, min_dist=0.1, rebui
         "model_id": model_id, "revision": revision, "layers": layers, "default_layer": default,
         "conversations": len({r["conversation_id"] for r in rows}), "created_utc": datetime.now(timezone.utc).isoformat(),
         "settings": settings, "site": "resid_post at the final formatted-prompt token, before each reply",
+        "themes": themes,
         "warning": ("Early PCA preview, not UMAP: waiting for six distinct recorded turns. "
                     if settings.get("method") == "pca_preview" else "Exploratory in-sample UMAP per layer. ")
                    + "Axes, distances and paths are not refusal measurements.",

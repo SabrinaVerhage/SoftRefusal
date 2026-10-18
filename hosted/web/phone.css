@@ -13,7 +13,7 @@ button:focus-visible,input:focus-visible,summary:focus-visible{outline:2px solid
 .room{max-width:640px;min-height:100svh;margin:auto;padding:0 20px calc(18px + env(safe-area-inset-bottom));display:flex;flex-direction:column}
 .masthead{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:18px 0 14px;border-bottom:1px solid var(--ink)}
 .brand{display:flex;align-items:center;gap:8px;font-family:var(--display);font-size:19px;letter-spacing:.02em}
-.brand-mark{font-family:var(--sans);font-size:26px;line-height:1}
+.brand-mark{display:block;width:26px;height:26px;flex:none}
 .handle{font-family:var(--mono);font-size:11px;letter-spacing:.04em}
 
 /* Welcome */

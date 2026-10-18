@@ -6,6 +6,9 @@
   // The public map shows threads and reasoning; ?tools brings back the research controls.
   const tools = new URLSearchParams(location.search).has('tools');
   document.body.classList.toggle('tools', tools);
+  const mobileLayout = matchMedia('(max-width:760px)');
+  const setExplanation = () => { $('map-explanation').open = !mobileLayout.matches; };
+  setExplanation(); mobileLayout.addEventListener('change', setExplanation);
   const concept = M.makeConcept();
   let data = concept, selected, hovered, neighbors = [], projected = [], drawnPoints = [], segments = [];
   let colorMode = 'topic', autoOrbit = false, showNeighbors = false, tour = null, transition = null, morph = null;
@@ -25,7 +28,7 @@
   // The donut field (wash, contours, core) frames both the reference field and the semantic donut.
   const shaped = () => data.kind === 'concept' || data.kind === 'semantic' || (!tools && data.kind === 'recordings');
   const labelNodes = [];
-  let recentIds = new Set(), pulsePoints = [], nextPulseCheck = 0;
+  let recentIds = new Set(), pulsePoints = [], nextPulseCheck = 0, density = [];
   const hasPath = p => !recorded() || recentIds.has(p.conversation_id);
   const labelNames = ['consent', 'intimacy', 'desire', 'erotic fiction', 'relationships', 'sexual health'];
 
@@ -39,6 +42,7 @@
     return a.map((x, i) => Math.round(x + (b[i] - x) * u));
   }
   function pigment(p) {
+    if (recorded() && !tools) return [22, 18, 21];
     if (recorded() && colorMode === 'topic') return conversationColors[M.conversationColorIndex(p.conversation_id, conversationColors.length)];
     if (colorMode === 'response' || p.outcome === 'unlabeled') return colors[p.outcome];
     return spectrum(p);
@@ -48,8 +52,8 @@
     const box = canvas.getBoundingClientRect(); width = box.width; height = box.height;
     dpr = Math.min(devicePixelRatio || 1, 2); canvas.width = Math.round(width * dpr); canvas.height = Math.round(height * dpr);
     const mobile = width <= 760, usableWidth = mobile ? width - 22 : width - (width < 1150 ? 380 : 470);
-    const mobileY = tools ? (height < 700 ? 0.47 : 0.4) : 0.57;
-    viewport = { cx: mobile ? width * 0.5 : width * 0.51, cy: mobile ? height * mobileY : height * 0.445, scale: Math.min(usableWidth / 5.9, height * (mobile ? (tools ? 0.081 : 0.07) : 0.127)) };
+    const mobileY = tools ? (height < 700 ? 0.47 : 0.4) : 0.49;
+    viewport = { cx: mobile ? width * 0.5 : width * 0.51, cy: mobile ? height * mobileY : height * 0.445, scale: Math.min(usableWidth / 5.9, height * (mobile ? (tools ? 0.081 : 0.105) : 0.127)) };
     dirty = true;
   }
   function project(p) { return M.project(p, camera, viewport); }
@@ -97,6 +101,15 @@
   }
   function drawContours() {
     if (!shaped() || !$('contours').checked) return;
+    if (recorded() && !data.synthetic) {
+      ctx.save(); ctx.strokeStyle = '#261921'; ctx.lineWidth = 0.75; ctx.globalAlpha = 0.52;
+      for (const contour of density) {
+        ctx.beginPath();
+        for (const [a, b] of contour.segments) { const p = project(a), q = project(b); ctx.moveTo(p.x, p.y); ctx.lineTo(q.x, q.y); }
+        ctx.stroke();
+      }
+      ctx.restore(); return;
+    }
     ctx.save(); ctx.strokeStyle = '#20131d'; ctx.lineWidth = 0.8; ctx.globalAlpha = 0.64;
     for (let j = 0; j < contourLines.length; j++) { curve(contourLines[j], true); ctx.stroke(); }
     ctx.restore();
@@ -112,7 +125,11 @@
     const q = project(p), r = Math.min(6, 4.1 * q.per * Math.sqrt(camera.zoom)); drawnPoints.push({ ...q, p });
     if (recorded()) {
       circle(q.x, q.y, r + 2.2); ctx.fillStyle = '#fdfaf5'; ctx.fill(); circle(q.x, q.y, r);
-      if (p.outcome === 'refused' || p.outcome === 'redirected') { ctx.strokeStyle = rgba(p.color, 1); ctx.lineWidth = p.outcome === 'refused' ? 2.4 : 1.6; ctx.stroke(); }
+      if (!tools) {
+        ctx.fillStyle = p.outcome === 'redirected' || p.outcome === 'unclear' || p.outcome === 'unlabeled' ? '#fdfaf5' : '#161215'; ctx.fill();
+        ctx.strokeStyle = '#161215'; ctx.lineWidth = 1.2; ctx.stroke();
+        if (p.outcome === 'refused') { circle(q.x, q.y, r + 3.4); ctx.stroke(); }
+      } else if (p.outcome === 'refused' || p.outcome === 'redirected') { ctx.strokeStyle = rgba(p.color, 1); ctx.lineWidth = p.outcome === 'refused' ? 2.4 : 1.6; ctx.stroke(); }
       else { ctx.fillStyle = rgba(p.color, 1); ctx.fill(); }
       ctx.font = "600 10px 'IBM Plex Mono', Consolas, monospace"; ctx.fillStyle = '#161514'; ctx.fillText(String(p.turn_id + 1), q.x + r + 4, q.y - r - 2);
     } else if (endpoint && data.kind === 'concept') {
@@ -161,10 +178,10 @@
       ctx.globalAlpha = Math.min(pathOpacity(a), pathOpacity(b));
       if (!tools) {
         // Every conversation reads as one continuous thread: a paper halo lifts it off the contours.
-        const lineWidth = active ? 3.6 : a.conversation_id === hoveredThread ? 3.2 : 2.4;
+        const lineWidth = active ? 2 : a.conversation_id === hoveredThread ? 1.9 : 1.6;
         ctx.setLineDash([]); ctx.lineCap = 'round'; curve([a, b]);
-        ctx.strokeStyle = 'rgba(253,250,245,0.9)'; ctx.lineWidth = lineWidth + 3.5; ctx.stroke();
-        ctx.strokeStyle = rgba(a.color, 1); ctx.lineWidth = lineWidth; ctx.stroke();
+        ctx.strokeStyle = 'rgba(253,250,245,0.8)'; ctx.lineWidth = lineWidth + 2; ctx.stroke();
+        ctx.setLineDash([3, 5]); ctx.strokeStyle = '#161215'; ctx.lineWidth = lineWidth; ctx.stroke();
       } else {
         ctx.strokeStyle = rgba(a.color, 1); ctx.lineWidth = active ? 2.3 : $('all-conversations').checked ? 1.8 : 1;
         ctx.setLineDash(active || $('all-conversations').checked ? [] : [3, 5]); curve([a, b]); ctx.stroke();
@@ -237,7 +254,12 @@
           q.x = center.x + Math.cos(angle) * (radius + 65); q.y = center.y + Math.sin(angle) * (radius + 65);
         }
       }
-      const hide = !visible || camera.zoom > 2.8 || q.x < 70 || q.x > width - 70 || q.y < 145 || q.y > height - 120;
+      if (label.members) {
+        const half = Math.min(label.el.offsetWidth / 2, width / 2 - 10);
+        q.x = clamp(q.x, half + 8, width - half - 8);
+      }
+      const edge = label.members ? 0 : 70;
+      const hide = !visible || camera.zoom > 2.8 || q.x < edge || q.x > width - edge || q.y < (width <= 760 ? 125 : 145) || q.y > height - 90;
       label.el.hidden = hide; label.el.style.left = `${q.x}px`; label.el.style.top = `${q.y - 18}px`; label.el.style.opacity = label.members ? 0.36 : clamp(0.95 - q.depth * 0.1, 0.45, 1);
     }
     $('zoom-value').textContent = `${Math.round(camera.zoom * 100)}%`;
@@ -258,7 +280,7 @@
     $('point-demo').textContent = recorded() ? data.synthetic ? 'ILLUSTRATIVE' : 'RECORDED' : data.kind === 'imported' ? p.synthetic === true || data.synthetic === true ? 'SYNTHETIC' : 'IMPORTED' : 'DEMO';
     const original = p.original_coordinates || [p.x, p.y, p.z];
     $('point-coordinates').textContent = data.kind === 'semantic' ? `CORE ${p.core_score.toFixed(2)} / ${Math.round((p.angle * 180 / Math.PI + 360) % 360)}°` : original.map(x => x.toFixed(2)).join(' / ');
-    $('inspector-note').textContent = data.kind === 'semantic' ? `Reference score ${p.core_score.toFixed(2)} at layer ${data.layer}. 0 = answered reference mean; 1 = refused reference mean. ${data.semantic.frozen ? 'Fixed reference ' + data.semantic.reference_id.slice(0, 8) + '. Labels change markers, not position.' : 'Legacy layout fitted to the displayed labels.'} Radius is an artistic compression, not a probability. Links join pre-reply checkpoints.` : recorded() ? `The model’s internal state just before this reply, at layer ${data.layer}, placed by UMAP among your other turns. UMAP is refitted on export; this view is exploratory.` : data.kind === 'concept' ? 'An illustrative prompt, with an assigned response. Click any point to look closer.' : data.kind === 'umap' ? 'Synthetic data. Responses are assigned demo labels; neighbors use the 3D projection.' : 'Metadata from your file. Neighbors use the displayed 3D coordinates.';
+    $('inspector-note').textContent = data.kind === 'semantic' ? `Reference score ${p.core_score.toFixed(2)} at layer ${data.layer}. 0 = answered reference mean; 1 = refused reference mean. ${data.semantic.frozen ? 'Fixed reference ' + data.semantic.reference_id.slice(0, 8) + '.' : 'Legacy reference.'} Radius is an artistic compression, not a probability. ${data.themes ? 'Angle follows estimated prompt themes, reassessed on export.' : 'Angle follows residual-state variation.'} Links join pre-reply checkpoints.` : recorded() ? `The model’s internal state just before this reply, at layer ${data.layer}, placed by UMAP among your other turns. UMAP is refitted on export; this view is exploratory.` : data.kind === 'concept' ? 'An illustrative prompt, with an assigned response. Click any point to look closer.' : data.kind === 'umap' ? 'Synthetic data. Responses are assigned demo labels; neighbors use the 3D projection.' : 'Metadata from your file. Neighbors use the displayed 3D coordinates.';
     if (data.kind === 'recordings' && data.settings?.method === 'pca_preview') $('inspector-note').textContent = `The model’s internal state just before this reply, at layer ${data.layer}. Early PCA preview, not UMAP; waiting for six distinct turns. This view is exploratory.`;
     if (recorded() && data.synthetic) {
       $('point-coordinates').textContent = 'ILLUSTRATIVE POSITION';
@@ -356,9 +378,9 @@
   function makeLabels() {
     $('map-labels').replaceChildren(); labelNodes.length = 0;
     if (recorded() && !data.synthetic) {
-      for (const region of M.themeRegions(data.points)) {
+      for (const region of M.themeRegions(data.points, data.themes)) {
         const el = document.createElement('span'); el.className = 'theme-cloud'; el.textContent = region.name;
-        el.title = `Prompt-word theme near ${region.count} turns; an exploratory hint, not a measured model category.`;
+        el.title = `Estimated prompt theme · ${region.count} recorded turns · reassessed after new replies.`;
         $('map-labels').append(el); labelNodes.push({ ...region, el });
       }
       return;
@@ -439,6 +461,7 @@
     const wasOrbiting = autoOrbit;
     replay = { path: [], index: 0, playing: false, reveal: false, next: 0 };
     data = next; morph = null; segments = data.kind === 'concept' ? [] : M.conversationPaths(data.points); filters.clear(); ['answered', 'redirected', 'refused', 'unclear', 'unlabeled'].forEach(x => filters.add(x));
+    density = recorded() && !data.synthetic ? M.densityContours(data.points) : [];
     recentIds = M.recentConversations(data.points); pulsePoints = data.points.filter(p => M.isRecentPoint(p));
     $('replay').hidden = !recorded();
     $('conversation-select').replaceChildren();
@@ -451,11 +474,11 @@
     $('core-sub').textContent = data.kind === 'semantic' ? 'REFUSAL REFERENCE / VISUAL METAPHOR' : 'A CONCEPTUAL LANDMARK';
     const measured = data.kind === 'semantic' && !data.synthetic;
     $('map-description').textContent = measured
-      ? 'Visitors try to get an AI to talk explicitly about sex. Paths follow the latest ten conversations toward a fixed, exploratory refusal reference. Earlier conversations remain as faded dots.'
+      ? 'Conversations move through estimated prompt themes and toward a fixed refusal reference. Black dotted paths follow the latest ten conversations; earlier turns remain as faded dots.'
       : recorded() && !data.synthetic
         ? 'Live conversations in an exploratory projection. The pink donut and core are illustrative while refusal-reference labels are missing; distance to this core does not measure refusal.'
         : 'A pink landscape of conversation and refusal. This illustrative view shows how a conversation can approach the core.';
-    $('projection-note').textContent = measured ? 'Fixed refusal reference · automatic labels can be wrong' : recorded() && !data.synthetic ? 'Live projection · illustrative core · awaiting refusal labels' : 'Illustrative conversations · no model measurements';
+    $('projection-note').textContent = measured ? 'Fixed refusal reference · estimated text themes · contours follow recorded turn density' : recorded() && !data.synthetic ? 'Live projection · illustrative core · awaiting refusal labels' : 'Illustrative conversations · no model measurements';
     $('trails').disabled = data.kind !== 'concept' && !segments.length; $('trails').checked = data.kind === 'concept' || recorded(); $('tour').disabled = data.kind !== 'concept' && !recorded();
     $('color-topic').textContent = recorded() ? 'Conversation' : 'Spectrum'; renderLayerSwitch();
     $('source-summary').textContent = data.kind === 'concept' ? 'Illustrative field · synthetic points' : data.kind === 'umap' ? 'Actual UMAP · synthetic vectors' : `Imported coordinates · ${data.synthetic === true || data.points.every(p => p.synthetic === true) ? 'synthetic' : 'user-supplied data'}`;

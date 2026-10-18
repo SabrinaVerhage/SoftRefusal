@@ -10,11 +10,12 @@
 <body>
 <main class="room">
   <header class="masthead">
-    <span class="brand"><span class="brand-mark" aria-hidden="true">✳</span>SOFT REFUSAL</span>
+    <span class="brand"><svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true" focusable="false"><path d="M16 2v28M2 16h28M6 6l20 20M6 26 26 6" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>SOFT REFUSAL</span>
     <span class="handle">@sextechsabrina</span>
   </header>
 
   <section id="welcome" class="welcome">
+    <p id="session-notice" class="fine" role="status" hidden>Your chat ended after 20 minutes without activity. Your saved conversation is still part of the map. Start a new conversation below.</p>
     <h1>SOFT<br>REFUSAL<span class="period">.</span></h1>
     <p class="subtitle">Mapping the sexual avoidance<br>of artificial intelligence</p>
     <p class="lede">AI language models are designed to set boundaries around explicit sexual content. Lead an AI into sexual territory and discover what triggers its avoidance.</p>
@@ -34,7 +35,7 @@
 
     <div class="notice">
       <strong>This conversation will be public.</strong>
-      <p>Your messages and the AI’s replies are saved and shown on a public map of all conversations. Don’t include names, contact details or other personal information.</p>
+      <p>Your messages and the AI’s replies are saved and shown on a public map of all conversations. Don’t include names, contact details or other personal information. This chat resets after 20 minutes without activity.</p>
       <label><input id="consent" type="checkbox"> <span>I understand and agree to share this conversation.</span></label>
     </div>
     <button id="start" class="primary" disabled>Start the conversation <span aria-hidden="true">→</span></button>

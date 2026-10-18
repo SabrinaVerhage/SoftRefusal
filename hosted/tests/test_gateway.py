@@ -1,4 +1,5 @@
 import json
+import sqlite3
 from pathlib import Path
 import sys
 import time
@@ -120,6 +121,68 @@ def test_restart_never_replays_pending_job(tmp_path):
     restarted = Gateway(tmp_path, tmp_path / "missing", map_enabled=False)
     assert restarted.state(restarted.token_owner(token), sid)["job"]["status"] == "interrupted"
     restarted.db.close()
+
+
+def test_idle_session_expires_without_removing_recordings(setup):
+    _, gateway, _, client = setup
+    sid = start(client)
+    assert send(client, sid).status_code == 200
+    finish(client, sid)
+    with gateway.lock:
+        gateway.db.execute("UPDATE conversations SET last_activity=? WHERE id=?", (time.time() - 1201, sid))
+        gateway.db.commit()
+    state = client.get('/api/state', params={'conversation': sid}).json()
+    assert state['session_expired'] and state['conversation'] is None and state['rows'] == []
+    assert send(client, sid, 'expired-request').status_code == 410
+    assert client.post('/api/activity', headers=HEADERS, json={'conversation':sid}).status_code == 410
+    assert len(gateway.service.state(sid)['rows']) == 1
+    assert client.get('/api/state', params={'resume':False}).json()['conversation'] is None
+    assert start(client) != sid
+
+
+def test_only_visitor_activity_renews_idle_timeout(setup):
+    _, gateway, _, client = setup
+    sid = start(client)
+    old = time.time() - 1100
+    with gateway.lock:
+        gateway.db.execute('UPDATE conversations SET last_activity=? WHERE id=?', (old, sid))
+        gateway.db.commit()
+    for _ in range(3):
+        assert client.get('/api/state', params={'conversation':sid}).json()['conversation'] == sid
+    with gateway.lock:
+        assert gateway.db.execute('SELECT last_activity FROM conversations WHERE id=?', (sid,)).fetchone()[0] == old
+    assert client.post('/api/activity', headers=HEADERS, json={'conversation':sid}).status_code == 200
+    with gateway.lock:
+        assert gateway.db.execute('SELECT last_activity FROM conversations WHERE id=?', (sid,)).fetchone()[0] > old
+
+
+def test_queued_reply_is_not_expired(tmp_path):
+    gateway = Gateway(tmp_path, tmp_path / 'missing', map_enabled=False)
+    try:
+        gateway.health = {'online':True}
+        sid, token = gateway.create_conversation(None, 'fixture')
+        owner = gateway.token_owner(token)
+        gateway.submit(owner, sid, 'Hello', 'fixture-request', 'fixture')
+        gateway.db.execute('UPDATE conversations SET last_activity=? WHERE id=?', (time.time()-1201,sid))
+        gateway.db.commit()
+        assert gateway.state(owner, sid)['job']['status'] == 'queued'
+    finally:
+        gateway.db.close()
+
+
+def test_idle_migration_preserves_existing_sessions(tmp_path):
+    old = time.time() - 100
+    with sqlite3.connect(tmp_path / 'visitors.sqlite') as db:
+        db.executescript('CREATE TABLE conversations(id TEXT PRIMARY KEY, owner TEXT NOT NULL, created REAL NOT NULL);')
+        db.execute('INSERT INTO conversations VALUES (?,?,?)', ('legacy', 'fixture', old))
+    gateway = Gateway(tmp_path, tmp_path / 'missing', map_enabled=False)
+    try:
+        legacy = gateway.db.execute('SELECT * FROM conversations WHERE id=?', ('legacy',)).fetchone()
+        assert legacy['last_activity'] == old and legacy['expired'] == 0
+        sid, _ = gateway.create_conversation(None, 'fixture')
+        assert sid != 'legacy'
+    finally:
+        gateway.db.close()
 
 
 def test_model_config_can_select_a_thinking_model(tmp_path, monkeypatch):

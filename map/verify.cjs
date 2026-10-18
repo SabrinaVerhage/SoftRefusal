@@ -65,6 +65,14 @@ const chronological = M.conversationPath([{ conversation_id: 'b', turn_id: 0 }, 
 assert.deepEqual(chronological.map(p => p.turn_id), [0, 2]);
 assert.equal(M.conversationColorIndex('stable-id', 8), M.conversationColorIndex('stable-id', 8));
 const scorePoints = [-2, 0, 0.5, 1, 3].map(core_score => M.semanticPosition({ core_score, angle: 0.3, lift: 0.2 }));
+const topicA = M.semanticPosition({core_score:0.2,angle:0,lift:0,topic_angle:0.5,topic_lift:0.1});
+const topicB = M.semanticPosition({core_score:0.2,angle:0,lift:0,topic_angle:2.5,topic_lift:0.1});
+assert(Math.hypot(topicA.x-topicB.x,topicA.y-topicB.y)>2);
+assert(Math.abs(Math.hypot(topicA.x,topicA.y)-Math.hypot(topicB.x,topicB.y))<1e-12);
+assert.deepEqual(M.densityContours([]),[]);
+const density = M.densityContours([{x:1,y:1,z:0}]);
+assert(density.every(c=>c.segments.length>0 && c.segments.flat().every(p=>Math.hypot(p.x-1,p.y-1)<1.3)));
+assert.equal(M.themeRegions([{point_id:'a',x:1,y:1,z:0}],{regions:[{name:'one real turn',point_ids:['a','missing']}]} )[0].count,1);
 assert(scorePoints.every(p => Object.values(p).every(Number.isFinite)));
 assert(scorePoints.slice(1).every((p, i) => Math.hypot(p.x, p.y) < Math.hypot(scorePoints[i].x, scorePoints[i].y)));
 assert.deepEqual(M.semanticPosition({ core_score: 0.7, angle: 0.3, lift: 0.2 }), M.semanticPosition({ core_score: 0.7, angle: 0.3, lift: 0.2, outcome: 'refused' }));

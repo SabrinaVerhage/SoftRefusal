@@ -101,7 +101,8 @@
   function semanticPosition(p) {
     // Fixed artistic radial compression. Preserve the unbounded score for inspection.
     const radius = 0.16 + 2.89 / (1 + Math.exp(clamp(3.8 * (p.core_score - 0.5), -700, 700)));
-    return { x: radius * Math.cos(p.angle), y: radius * Math.sin(p.angle), z: p.lift * 0.42 };
+    const angle = p.topic_angle ?? p.angle, lift = p.topic_lift ?? p.lift;
+    return { x: radius * Math.cos(angle), y: radius * Math.sin(angle), z: lift * 0.42 };
   }
   function pointTime(p) {
     const time = Date.parse(p.completed_utc || '');
@@ -124,7 +125,16 @@
     return [...recentConversations(points, count)].flatMap(id => conversationPath(points, id));
   }
   // Local prompt-word hints, not a claim that model activations have named semantic axes.
-  function themeRegions(points) {
+  function themeRegions(points, exportedThemes) {
+    if (exportedThemes?.regions) {
+      const byId = new Map(points.map(p => [p.point_id, p]));
+      return exportedThemes.regions.flatMap(region => {
+        const members = region.point_ids.map(id => byId.get(id)).filter(Boolean);
+        if (!members.length) return [];
+        const point = Object.fromEntries(['x', 'y', 'z'].map(key => [key, members.reduce((sum, p) => sum + p[key], 0) / members.length]));
+        return [{name: region.name, point, members, count: members.length}];
+      });
+    }
     const themes = [
       ['consent & boundaries', /\b(consent|boundar\w*|permission|comfortable|respect|agree)\b/i],
       ['romance & intimacy', /\b(romanti\w*|kiss\w*|intima\w*|cuddl\w*|tender\w*|love|flirt\w*)\b/i],
@@ -152,6 +162,38 @@
     }
     return regions;
   }
+  function densityContours(points) {
+    // Gaussian density in the displayed topic/refusal plane. Only recorded
+    // checkpoints contribute; these segments never become selectable data dots.
+    if (!points.length) return [];
+    const size = 120, extent = 3.7, step = 2 * extent / (size - 1), bandwidth = 0.44;
+    const grid = new Float64Array(size * size), stride = Math.max(1, Math.ceil(points.length / 2000));
+    const reach = Math.ceil(3 * bandwidth / step);
+    for (let k = 0; k < points.length; k += stride) {
+      const p = points[k], ix = Math.round((p.x + extent) / step), iy = Math.round((p.y + extent) / step);
+      for (let y = Math.max(0, iy - reach); y <= Math.min(size - 1, iy + reach); y++)
+        for (let x = Math.max(0, ix - reach); x <= Math.min(size - 1, ix + reach); x++) {
+          const distance = ((x * step - extent - p.x) ** 2 + (y * step - extent - p.y) ** 2) / bandwidth ** 2;
+          grid[y * size + x] += Math.exp(-distance / 2) * stride;
+        }
+    }
+    const peak = Math.max(...grid), contours = [];
+    for (const ratio of [.07, .12, .2, .3, .43, .58, .75, .9]) {
+      const level = peak * ratio, segments = [];
+      for (let y = 0; y < size - 1; y++) for (let x = 0; x < size - 1; x++) {
+        const corners = [[x,y],[x+1,y],[x+1,y+1],[x,y+1]], crossings = [];
+        for (let edge = 0; edge < 4; edge++) {
+          const a = corners[edge], b = corners[(edge + 1) % 4], va = grid[a[1] * size + a[0]], vb = grid[b[1] * size + b[0]];
+          if ((va >= level) === (vb >= level)) continue;
+          const t = (level - va) / (vb - va);
+          crossings.push({x: (a[0] + t * (b[0] - a[0])) * step - extent, y: (a[1] + t * (b[1] - a[1])) * step - extent, z: 0});
+        }
+        for (let i = 0; i + 1 < crossings.length; i += 2) segments.push([crossings[i], crossings[i + 1]]);
+      }
+      contours.push({level, segments});
+    }
+    return contours;
+  }
   function project(p, camera, viewport) {
     const x = p.x - camera.target.x, y = p.y - camera.target.y, z = p.z - camera.target.z;
     const cy = Math.cos(camera.yaw), sy = Math.sin(camera.yaw), cp = Math.cos(camera.pitch), sp = Math.sin(camera.pitch);
@@ -159,5 +201,5 @@
     const per = 8 / Math.max(0.4, 8 + depth), scale = viewport.scale * camera.zoom;
     return { x: viewport.cx + xx * per * scale + camera.pan.x, y: viewport.cy - yy * per * scale + camera.pan.y, depth, per };
   }
-  root.CloudMath = { TAU, clamp, rng, surface, makeConcept, normalizePoints, recordingPositions, parseFile, conversationPaths, conversationPath, conversationColorIndex, semanticPosition, nearest, project, topics, pointTime, isRecentPoint, recentConversations, featuredTurns, themeRegions };
+  root.CloudMath = { TAU, clamp, rng, surface, makeConcept, normalizePoints, recordingPositions, parseFile, conversationPaths, conversationPath, conversationColorIndex, semanticPosition, nearest, project, topics, pointTime, isRecentPoint, recentConversations, featuredTurns, themeRegions, densityContours };
 })(typeof window !== 'undefined' ? window : globalThis);
